@@ -1,0 +1,492 @@
+﻿@* Views/Meeting/MeetingCalendar.cshtml  (old: Pages/Meeting/Default.aspx - FullCalendar "Schedule")
+   REPORT PAGE with a calendar: month / week / day / list at a glance. Same filter + Select2 dropdowns as MeetingSchedule.cshtml.
+   Data: Meeting/GetCalendarEvents (JSON, loaded again when the month / week / day or a filter changes). *@
+@model AlphaCare.Models.MeetingScheduleViewModel
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = "Meeting Calendar";
+}
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" />
+<style>
+    /* colours of the meetings - change here */
+    :root {
+        --mcal-approved: #2563eb;
+        --mcal-waiting: #f59e0b;
+        --mcal-rejected: #dc2626;
+        --mcal-cancelled: #64748b;
+    }
+
+    /* SEARCHABLE DROPDOWNS - same look as CreateMeeting.cshtml (classic Select2) */
+    /* Select2 classic look (like the sample image): bordered box, search field, blue highlighted row */
+    .select2-container {
+        width: 100% !important;
+    }
+
+    .select2-container--default .select2-selection--single {
+        height: 38px;
+        border: 1px solid #aaa;
+        border-radius: 4px;
+        background: #fff;
+    }
+
+        .select2-container--default .select2-selection--single .select2-selection__rendered {
+            line-height: 36px;
+            padding-left: 12px;
+            padding-right: 28px;
+            color: #444;
+        }
+
+        .select2-container--default .select2-selection--single .select2-selection__placeholder {
+            color: #777;
+        }
+
+        .select2-container--default .select2-selection--single .select2-selection__arrow {
+            height: 36px;
+            right: 4px;
+        }
+
+    .select2-container--default.select2-container--focus .select2-selection--single,
+    .select2-container--default.select2-container--open .select2-selection--single {
+        border-color: #5897fb;
+        box-shadow: 0 0 0 3px rgba(88,151,251,.2);
+    }
+
+    .select2-container--default.select2-container--disabled .select2-selection--single {
+        background: #eee;
+        cursor: not-allowed;
+    }
+
+    .select2-dropdown {
+        border: 1px solid #aaa;
+        border-radius: 4px;
+        box-shadow: 0 6px 16px rgba(0,0,0,.15);
+    }
+
+    .select2-container--default .select2-search--dropdown {
+        padding: 4px;
+    }
+
+        .select2-container--default .select2-search--dropdown .select2-search__field {
+            border: 1px solid #aaa;
+            border-radius: 3px;
+            height: 32px;
+            padding: 0 8px;
+            outline: none;
+        }
+
+    .select2-container--default .select2-results > .select2-results__options {
+        max-height: 260px;
+    }
+
+    .select2-container--default .select2-results__option {
+        padding: 7px 10px;
+        font-size: .9rem;
+    }
+
+    .select2-container--default .select2-results__option--highlighted.select2-results__option--selectable {
+        background-color: #5897fb;
+        color: #fff;
+    }
+
+    .select2-container--default .select2-results__option--selected {
+        background-color: #e9eefb;
+    }
+
+    .mcal-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        font-size: .8rem;
+        color: #475569;
+        margin: 2px 0 12px;
+    }
+
+        .mcal-legend i {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+            margin-right: 5px;
+            vertical-align: -1px;
+        }
+
+    #mcal {
+        min-height: 520px;
+        position: relative;
+    }
+
+        #mcal .fc-event {
+            cursor: pointer;
+            font-size: .78rem;
+        }
+
+        #mcal a {
+            text-decoration: none;
+        }
+
+        #mcal .fc-daygrid-event {
+            white-space: normal;
+            padding: 1px 3px;
+            color: #fff;
+        }
+
+            #mcal .fc-daygrid-event .fc-event-time {
+                white-space: nowrap;
+                margin-right: 4px;
+            }
+
+            #mcal .fc-daygrid-event .fc-event-time, #mcal .fc-daygrid-event .fc-event-title {
+                color: #fff;
+            }
+
+        #mcal .fc-toolbar-title {
+            font-size: 1.15rem;
+        }
+
+        #mcal .fc-button-primary {
+            background: #2563eb;
+            border-color: #2563eb;
+        }
+
+            #mcal .fc-button-primary:not(:disabled).fc-button-active, #mcal .fc-button-primary:not(:disabled):active {
+                background: #1e40af;
+                border-color: #1e40af;
+            }
+
+    #mcalBusy {
+        display: none;
+        position: absolute;
+        inset: 0;
+        background: rgba(255,255,255,.55);
+        z-index: 5;
+        align-items: center;
+        justify-content: center;
+    }
+    /* month view (desktop): start - end time on the first line, title below */
+    #mcal .mcal-ev {
+        line-height: 1.25;
+        padding: 1px 2px;
+        overflow: hidden;
+    }
+
+        #mcal .mcal-ev b {
+            display: block;
+            font-size: .72rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        #mcal .mcal-ev span {
+            display: block;
+            font-size: .74rem;
+            white-space: normal;
+            word-break: break-word;
+        }
+
+    /* ---- PHONE ---- */
+    @@media (max-width: 700px) {
+        .sd-page .card-body {
+            padding: 10px;
+        }
+
+        .sd-page .sd-filter {
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+
+            .sd-page .sd-filter .form-label {
+                margin-bottom: 1px;
+            }
+
+        .mcal-legend {
+            gap: 8px 12px;
+            font-size: .72rem;
+        }
+
+        #mcal {
+            min-height: 0;
+        }
+
+            #mcal .fc-toolbar {
+                gap: 6px;
+            }
+
+            #mcal .fc-toolbar-title {
+                font-size: 1rem;
+            }
+
+            #mcal .fc-button {
+                padding: .3rem .55rem;
+                font-size: .8rem;
+            }
+
+            #mcal .fc-col-header-cell-cushion {
+                font-size: .7rem;
+                padding: 2px;
+            }
+
+            #mcal .fc-daygrid-day-number {
+                font-size: .78rem;
+                padding: 2px 4px;
+            }
+
+            #mcal .fc-daygrid-day-frame {
+                min-height: 52px;
+            }
+            /* month on a phone: small coloured dots, tap a day to read the meetings of that day */
+            #mcal .fc-daygrid-day-events {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 2px;
+                padding: 0 3px;
+                min-height: 0;
+            }
+
+            #mcal .fc-daygrid-dot-event {
+                display: inline-flex;
+                padding: 0;
+                margin: 0 !important;
+            }
+
+                #mcal .fc-daygrid-dot-event .fc-event-time, #mcal .fc-daygrid-dot-event .fc-event-title {
+                    display: none;
+                }
+
+            #mcal .fc-daygrid-event-harness {
+                margin: 0 !important;
+            }
+            /* list view = one card per meeting */
+            #mcal .fc-list-event td {
+                padding: 8px 8px;
+                font-size: .82rem;
+            }
+
+            #mcal .fc-list-day-cushion {
+                font-size: .82rem;
+                padding: 6px 8px;
+            }
+
+            #mcal .fc-list-event-time {
+                white-space: nowrap;
+                width: 1%;
+            }
+    }
+</style>
+
+<div class="sd-page" data-smart-page>
+    <div class="card shadow-sm border-0">
+
+        <div class="sd-head">
+            <h5 class="mb-0"><i class="fas fa-calendar-days me-2"></i>Meeting Calendar</h5>
+            <span class="sd-date"><i class="far fa-calendar me-1"></i>@DateTime.Today.ToString("dddd, dd MMMM yyyy")</span>
+        </div>
+
+        <div class="card-body">
+
+            @* 1. FILTER (the calendar reloads by itself when you change a dropdown) *@
+            <div class="sd-filter">
+                <div class="row g-2 g-md-3 align-items-end">
+                    <div class="col-md-4">
+                        <label class="form-label">Location</label>
+                        <select class="form-select" id="selCenter">
+                            <option value="0">All locations</option>
+                            @foreach (var c in Model.Centers)
+                            {
+                                <option value="@c.ID" selected="@(c.ID == Model.CenterId)">@c.CENTERNAME</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-5">
+                        <label class="form-label">Room</label>
+                        <select class="form-select" id="selRoom">
+                            <option value="0">All rooms</option>
+                            @foreach (var r in Model.Rooms)
+                            {
+                                <option value="@r.ID" selected="@(r.ID == Model.RoomId)">@r.DisplayName</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Status</label>
+                        <select class="form-select" id="selStatus">
+                            <option value="1" selected="@(Model.Status == 1)">Approved</option>
+                            <option value="0" selected="@(Model.Status == 0)">Waiting</option>
+                            <option value="2" selected="@(Model.Status == 2)">Rejected</option>
+                            <option value="3" selected="@(Model.Status == 3)">Cancelled</option>
+                            <option value="-1" selected="@(Model.Status == -1)">All status</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mcal-legend">
+                <span><i style="background:var(--mcal-approved)"></i>Approved</span>
+                <span><i style="background:var(--mcal-waiting)"></i>Waiting</span>
+                <span><i style="background:var(--mcal-rejected)"></i>Rejected</span>
+                <span><i style="background:var(--mcal-cancelled)"></i>Cancelled</span>
+                <span class="text-muted">Click a meeting to open its details.</span>
+            </div>
+
+            @* 2. CALENDAR *@
+            <div id="mcal">
+                <div id="mcalBusy"><span class="spinner-border text-primary"></span></div>
+                <div id="mcalBox"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            var URL_EVENTS = '@Url.Action("GetCalendarEvents", "Meeting")';
+            var URL_ROOMS  = '@Url.Action("GetRooms", "Meeting")';
+            var URL_VIEW   = '@Url.Action("ViewMeeting", "Meeting")';
+            var COLORS = { 0: '#f59e0b', 1: '#2563eb', 2: '#dc2626', 3: '#64748b' };
+            var STATUS = { 0: 'Waiting', 1: 'Approved', 2: 'Rejected', 3: 'Cancelled' };
+
+            function loadScript(src, done) {
+                var s = document.createElement('script');
+                s.src = src; s.onload = done;
+                s.onerror = function () { console.error('Could not load ' + src); done(); };
+                document.head.appendChild(s);
+            }
+            // jQuery + Select2 (same helper as CreateMeeting.cshtml) -> then FullCalendar -> start
+            function withSelect2(done) {
+                if (window.jQuery && jQuery.fn && jQuery.fn.select2) return done();
+                var loadS2 = function () { loadScript('https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js', done); };
+                if (window.jQuery) loadS2(); else loadScript('https://code.jquery.com/jquery-3.7.1.min.js', loadS2);
+            }
+            function withCalendar(done) {
+                if (window.FullCalendar) return done();
+                loadScript('https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js', done);
+            }
+            function boot() { withSelect2(function () { withCalendar(start); }); }
+            if (document.readyState === 'complete') boot(); else window.addEventListener('load', boot);
+
+            function start() {
+                var $center = jQuery('#selCenter'), $room = jQuery('#selRoom'), $status = jQuery('#selStatus');
+
+                /* ===== SEARCHABLE DROP DOWNS ===== */
+                if (jQuery.fn.select2) {
+                    [$center, $room, $status].forEach(function ($s) {
+                        try {
+                            if ($s.hasClass('select2-hidden-accessible')) $s.select2('destroy');
+                            $s.select2({ theme: 'default', width: '100%', placeholder: $s.find('option:first').text(),
+                                         language: { noResults: function () { return 'No result found'; } } });
+                        } catch (e) { console.error('Select2 failed for #' + $s.attr('id'), e); try { $s.select2('destroy'); } catch (x) { } }
+                    });
+                    jQuery(document).on('select2:open', function () {
+                        var f = document.querySelector('.select2-container--open .select2-search__field'); if (f) f.focus();
+                    });
+                }
+
+                if (!window.FullCalendar) {
+                    document.getElementById('mcalBox').innerHTML = '<div class="alert alert-warning">The calendar library could not be loaded.</div>';
+                    return;
+                }
+
+                /* ===== CALENDAR ===== */
+                var busy = document.getElementById('mcalBusy');
+                var isNarrow = function () { return window.innerWidth < 700; };
+                var narrow = isNarrow();
+                var esc = function (t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+                var tf = { hour: 'numeric', minute: '2-digit', meridiem: 'short' };
+                var hm = function (d) { return FullCalendar.formatDate(d, tf); };
+
+                // toolbar of a computer (one row) / of a phone (title + arrows on top, view buttons at the bottom)
+                function toolbars(n) {
+                    return n
+                        ? { headerToolbar: { start: 'title', end: 'prev,next' },
+                            footerToolbar: { start: 'listDay,listWeek,dayGridMonth', end: 'today' } }
+                        : { headerToolbar: { left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay,listMonth' },
+                            footerToolbar: false };
+                }
+                var tb = toolbars(narrow);
+                var cal = new FullCalendar.Calendar(document.getElementById('mcalBox'), {
+                    initialView: narrow ? 'listWeek' : 'dayGridMonth',
+                    headerToolbar: tb.headerToolbar,
+                    footerToolbar: tb.footerToolbar,
+                    buttonText: { today: 'Today', month: 'Month', week: 'Week', day: 'Day', listMonth: 'List', listWeek: 'Week', listDay: 'Day' },
+                    navLinkDayClick: function (d) { cal.changeView(isNarrow() ? 'listDay' : 'timeGridDay', d); },
+                    height: 'auto',
+                    firstDay: 0,                          // Sunday (like the old calendar)
+                    nowIndicator: true,
+                    navLinks: true,                       // click a day number -> day view
+                    eventDisplay: narrow ? 'list-item' : 'block',      // computer: filled bars like the old calendar, phone: dots
+                    dayMaxEvents: 4,                      // "+2 more" when a day is full
+                    slotMinTime: '06:00:00', slotMaxTime: '22:00:00', scrollTime: '08:00:00',
+                    eventTimeFormat: { hour: 'numeric', minute: '2-digit', meridiem: 'short' },
+                    loading: function (isLoading) { busy.style.display = isLoading ? 'flex' : 'none'; },
+
+                    events: function (info, ok, fail) {
+                        var q = new URLSearchParams({
+                            centerId: $center.val() || 0, roomId: $room.val() || 0, status: $status.val() || 1,
+                            start: info.startStr, end: info.endStr
+                        });
+                        fetch(URL_EVENTS + '?' + q.toString(), { credentials: 'same-origin' })
+                            .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+                            .then(function (list) {
+                                ok(list.map(function (m) {
+                                    return { id: m.id, title: m.title, start: m.start, end: m.end,
+                                             backgroundColor: COLORS[m.status], borderColor: COLORS[m.status], extendedProps: m };
+                                }));
+                            })
+                            .catch(function (e) { console.error(e); SD.toast('Could not load the meetings.', true); fail(e); });
+                    },
+
+                    // MONTH view: "8:00am - 9:30am" + title (start AND end time). Phone month = dots only.
+                    eventContent: function (a) {
+                        if (a.view.type !== 'dayGridMonth') return true;                 // week / day / list views already show start - end -> normal text
+                        if (isNarrow()) return true;                                     // phone: normal dot (text hidden by the CSS)
+                        var st = a.event.start, en = a.event.end;
+                        var time = hm(st) + (en ? ' - ' + hm(en) : '');
+                        return { html: '<div class="mcal-ev"><b>' + esc(time) + '</b><span>' + esc(a.event.title) + '</span></div>' };
+                    },
+
+                    // hover text with the details
+                    eventDidMount: function (a) {
+                        var m = a.event.extendedProps;
+                        a.el.title = (m.fullTitle || a.event.title) + '\n' + (m.room || '') + '\n' +
+                                     a.timeText + '\nStatus: ' + (STATUS[m.status] || '') +
+                                     (m.calledBy ? '\nCall by: ' + m.calledBy : '') + (m.requestedBy ? '\nRequest by: ' + m.requestedBy : '') +
+                                     (m.roomAdmin ? '\nRoom admin: ' + m.roomAdmin : '');
+                    },
+
+                    eventClick: function (a) { a.jsEvent.preventDefault(); window.location.href = URL_VIEW + '?id=' + encodeURIComponent(a.event.id); }
+                });
+                cal.render();
+
+                // turning the phone / resizing the window: switch between the computer and the phone layout
+                var wasNarrow = narrow;
+                window.addEventListener('resize', function () {
+                    var n = isNarrow();
+                    if (n === wasNarrow) return;
+                    wasNarrow = n;
+                    var t = toolbars(n);
+                    cal.setOption('headerToolbar', t.headerToolbar);
+                    cal.setOption('footerToolbar', t.footerToolbar);
+                    cal.setOption('eventDisplay', n ? 'list-item' : 'block');
+                    cal.changeView(n ? 'listWeek' : 'dayGridMonth');
+                });
+
+                /* ===== LOCATION -> ROOM (cascading), every change reloads the calendar ===== */
+                $center.on('change', function () {
+                    $room.empty().append(new Option('All rooms', '0', false, false)).trigger('change.select2');
+                    var id = parseInt($center.val(), 10) || 0;
+                    if (id <= 0) { cal.refetchEvents(); return; }
+                    $room.prop('disabled', true);
+                    fetch(URL_ROOMS + '?businessCenterId=' + encodeURIComponent(id), { credentials: 'same-origin' })
+                        .then(function (r) { return r.json(); })
+                        .then(function (list) { list.forEach(function (x) { $room.append(new Option(x.name, x.id, false, false)); }); })
+                        .catch(function () { SD.toast('Could not load the rooms.', true); })
+                        .finally(function () { $room.prop('disabled', false).trigger('change.select2'); cal.refetchEvents(); });
+                });
+                $room.on('change', function () { cal.refetchEvents(); });
+                $status.on('change', function () { cal.refetchEvents(); });
+            }
+        })();
+    </script>
+}

@@ -1,0 +1,1061 @@
+﻿@* Views/Meeting/CreateMeeting.cshtml  - NEW meeting (MeetingId = 0) and EDIT meeting in one page *@
+@model AlphaCare.Models.CreateMeetingViewModel
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+
+    bool isNew = (Model?.MeetingId ?? 0) <= 0;
+    ViewData["Title"] = isNew ? "New Meeting" : "Meeting Entry";
+
+    var meeting = Model?.Meeting;
+    var currentRoom = Model?.Rooms.FirstOrDefault(r => r.ID == Model.RoomId);
+
+    // used by the room availability calendar
+    string rbInitDate = (isNew ? Model?.StartTime : meeting?.STARTTIME)?.ToString("yyyy-MM-dd") ?? "";
+    string rbEditS = isNew ? "" : (meeting?.STARTTIME?.ToString("yyyy-MM-ddTHH:mm") ?? "");
+    string rbEditE = isNew ? "" : (meeting?.ENDTIME?.ToString("yyyy-MM-ddTHH:mm") ?? "");
+}
+
+<div class="container-fluid py-3">
+    <div class="card shadow-sm border-0">
+
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">
+                <i class="fas fa-calendar-plus me-2"></i>
+                @(isNew ? "New Meeting" : "Meeting Entry")
+            </h5>
+        </div>
+
+        <div class="card-body">
+
+            @if (TempData["MeetingMsg"] != null)
+            {
+                <div class="alert alert-success"><i class="fas fa-circle-check me-1"></i>@TempData["MeetingMsg"]</div>
+            }
+
+            @if (ViewBag.Errors is List<string> errors && errors.Count > 0)
+            {
+                <div class="alert alert-danger">
+                    <ul class="mb-0">
+                        @foreach (var error in errors)
+                        {
+                            <li>@error</li>
+                        }
+                    </ul>
+                </div>
+            }
+
+            <form method="post" asp-controller="Meeting" asp-action="CreateMeeting" id="meetingForm">
+
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="MeetingId" value="@(Model?.MeetingId ?? 0)" />
+
+                <!-- ============ LOCATION / ROOM / TIME ============ -->
+                <div class="row">
+
+                    <div class="col-md-3 mb-3">
+                        <label for="BusinessCenterId" class="form-label fw-semibold">
+                            Location <span class="text-danger">*</span>
+                        </label>
+                        <select class="form-select" id="BusinessCenterId" name="BusinessCenterId">
+                            <option value="">-- Select Location --</option>
+                            @foreach (var c in Model!.BusinessCenters)
+                            {
+                                <option value="@c.ID" selected="@(Model.BusinessCenterId == c.ID)">@c.CENTERNAME</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="col-md-3 mb-3">
+                        <label for="RoomId" class="form-label fw-semibold">
+                            Room <span class="text-danger">*</span>
+                        </label>
+                        <select class="form-select" id="RoomId" name="RoomId">
+                            <option value="">-- Select Room --</option>
+                            @foreach (var r in Model.Rooms)
+                            {
+                                <option value="@r.ID" data-admin="@r.ADMINNAME" data-mobile="@r.ADMINMOBILE"
+                                        selected="@(Model.RoomId == r.ID)">@r.DisplayName</option>
+                            }
+                        </select>
+                        <div class="form-text" id="roomAdmin">
+                            @if (currentRoom != null && !string.IsNullOrEmpty(currentRoom.ADMINNAME))
+                            {
+                                <span><i class="fas fa-user-gear me-1"></i>Room admin: @currentRoom.ADMINNAME @(string.IsNullOrEmpty(currentRoom.ADMINMOBILE) ? "" : "(" + currentRoom.ADMINMOBILE + ")")</span>
+                            }
+                        </div>
+                    </div>
+
+                    @if (isNew)
+                    {
+                        <!-- NEW: user picks the time -->
+                        <div class="col-md-3 mb-3">
+                            <label for="StartTime" class="form-label fw-semibold">
+                                Start Time <span class="text-danger">*</span>
+                            </label>
+                            <input type="datetime-local" class="form-control" id="StartTime" name="StartTime"
+                                   value="@(Model.StartTime?.ToString("yyyy-MM-ddTHH:mm"))" />
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label for="EndTime" class="form-label fw-semibold">
+                                End Time <span class="text-danger">*</span>
+                            </label>
+                            <input type="datetime-local" class="form-control" id="EndTime" name="EndTime"
+                                   value="@(Model.EndTime?.ToString("yyyy-MM-ddTHH:mm"))" />
+                        </div>
+                    }
+                    else
+                    {
+                        <!-- EDIT: time stays as saved -->
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label fw-semibold">Start Time</label>
+                            <input type="text" class="form-control" readonly
+                                   value="@(meeting?.STARTTIME?.ToString("dd MMM yyyy, hh:mm tt") ?? "-")" />
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <label class="form-label fw-semibold">End Time</label>
+                            <input type="text" class="form-control" readonly
+                                   value="@(meeting?.ENDTIME?.ToString("dd MMM yyyy, hh:mm tt") ?? "-")" />
+                        </div>
+                    }
+                </div>
+
+                <!-- ============ ROOM AVAILABILITY (booked / free) ============ -->
+                <div class="rb-card" id="rbCard">
+                    <div class="rb-head">
+                        <div class="rb-title"><i class="fas fa-calendar-days me-2"></i>Room Availability <span id="rbRoomName"></span></div>
+                        <div class="rb-nav">
+                            <button type="button" class="btn btn-sm btn-light" id="rbPrev" title="Previous day"><i class="fas fa-chevron-left"></i></button>
+                            <input type="date" class="form-control form-control-sm" id="rbDate" />
+                            <button type="button" class="btn btn-sm btn-light" id="rbNext" title="Next day"><i class="fas fa-chevron-right"></i></button>
+                            <button type="button" class="btn btn-sm btn-outline-primary" id="rbToday">Today</button>
+                        </div>
+                    </div>
+                    <div class="rb-legend">
+                        <span><i class="rb-dot free"></i>Free</span>
+                        <span><i class="rb-dot ap"></i>Booked (approved)</span>
+                        <span><i class="rb-dot pe"></i>Booked (waiting for approval)</span>
+                        @if (isNew)
+                        {
+                            <span><i class="rb-dot sel"></i>Your selected time</span>
+                        }
+                    </div>
+                    <div id="rbBody"><div class="rb-hint"><i class="far fa-calendar"></i>Select a Location to see booked and free time of all its rooms.</div></div>
+                    <div class="rb-note" id="rbNote"></div>
+                </div>
+
+                <hr />
+
+                <!-- ============ TYPE + TITLE ============ -->
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <label for="MeetingTypeId" class="form-label fw-semibold">
+                            Meeting Type <span class="text-danger">*</span>
+                        </label>
+                        <select class="form-select" id="MeetingTypeId" name="MeetingTypeId">
+                            <option value="">-- Select Meeting Type --</option>
+                            @foreach (var t in Model.MeetingTypes)
+                            {
+                                <option value="@t.ID" selected="@(Model.MeetingTypeId == t.ID)">@t.MTYPENAME</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-8 mb-3">
+                        <label for="MeetingTitle" class="form-label fw-semibold">
+                            Meeting Title <span class="text-danger">*</span>
+                        </label>
+                        <input type="text" class="form-control" id="MeetingTitle" name="MeetingTitle" maxlength="100"
+                               placeholder="Enter meeting title" value="@(Model.MeetingTitle ?? "")" />
+                    </div>
+                </div>
+
+                <!-- ============ AGENDA ============ -->
+                <div class="mb-3">
+                    <label for="Agenda" class="form-label fw-semibold">
+                        Agenda <span class="text-danger">*</span>
+                    </label>
+                    <textarea class="form-control" id="Agenda" name="Agenda" rows="7" maxlength="1000"
+                              placeholder="Enter meeting agenda...">@(Model.Agenda ?? "")</textarea>
+                </div>
+
+                <!-- ============ MEETING CALLED BY + PARTICIPANT ============ -->
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="MeetingCalledBy" class="form-label fw-semibold">Meeting Called By</label>
+                        <input type="text" class="form-control" id="MeetingCalledBy" name="MeetingCalledBy" maxlength="50"
+                               placeholder="Who called this meeting?" value="@(Model.MeetingCalledBy ?? "")" />
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="ActualParticipant" class="form-label fw-semibold">Participant <small class="text-muted fw-normal">(number of participants)</small></label>
+                        <input type="number" class="form-control" id="ActualParticipant" name="ActualParticipant" min="0" max="9999" step="1"
+                               placeholder="Number of participants" value="@(Model.ActualParticipant > 0 ? Model.ActualParticipant.ToString() : "")" />
+                    </div>
+                </div>
+
+                <!-- ============ BUTTONS ============ -->
+                <div class="d-flex justify-content-end gap-2 mt-4">
+                    <a href="@Url.Action("Index", "Home")" class="btn btn-secondary">
+                        <i class="fas fa-arrow-left me-1"></i> Back
+                    </a>
+                    <button type="reset" class="btn btn-warning">
+                        <i class="fas fa-rotate-left me-1"></i> Reset
+                    </button>
+                    <button type="submit" class="btn btn-primary" id="btnSave">
+                        <i class="fas fa-save me-1"></i> @(isNew ? "Create Meeting" : "Save Meeting")
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" />
+
+@* =========================================================================
+   STYLES  - colours are in the :root block at the top
+   ========================================================================= *@
+<style>
+    /* =====================================================================
+               wwwroot/css/meeting-create.css      (used by Views/Meeting/CreateMeeting.cshtml)
+               -> change colours in the :root block below, everything else follows.
+               ===================================================================== */
+    :root {
+        --mc-free-bg: #f0fdf4; /* free time (bar background) */
+        --mc-free-line: #d1fae5; /* hour lines */
+        --mc-free-chip-bg: #dcfce7;
+        --mc-free-chip-tx: #166534;
+        --mc-approved: #ef4444; /* booked + approved */
+        --mc-waiting: #f59e0b; /* booked + waiting for approval */
+        --mc-selected: #3b82f6; /* the time you picked */
+        --mc-clash: #dc2626; /* picked time is already booked */
+        --mc-bar-height: 58px; /* height of the time bar */
+    }
+
+    /* ---- ROOM AVAILABILITY CALENDAR + SEARCHABLE DROPDOWNS ---- */
+    /* Select2 classic look (like the sample image): bordered box, search field, blue highlighted row */
+    .select2-container {
+        width: 100% !important;
+    }
+
+    .select2-container--default .select2-selection--single {
+        height: 38px;
+        border: 1px solid #aaa;
+        border-radius: 4px;
+        background: #fff;
+    }
+
+        .select2-container--default .select2-selection--single .select2-selection__rendered {
+            line-height: 36px;
+            padding-left: 12px;
+            padding-right: 28px;
+            color: #444;
+        }
+
+        .select2-container--default .select2-selection--single .select2-selection__placeholder {
+            color: #777;
+        }
+
+        .select2-container--default .select2-selection--single .select2-selection__arrow {
+            height: 36px;
+            right: 4px;
+        }
+
+    .select2-container--default.select2-container--focus .select2-selection--single,
+    .select2-container--default.select2-container--open .select2-selection--single {
+        border-color: #5897fb;
+        box-shadow: 0 0 0 3px rgba(88,151,251,.2);
+    }
+
+    .select2-container--default.select2-container--disabled .select2-selection--single {
+        background: #eee;
+        cursor: not-allowed;
+    }
+
+    .select2-dropdown {
+        border: 1px solid #aaa;
+        border-radius: 4px;
+        box-shadow: 0 6px 16px rgba(0,0,0,.15);
+    }
+
+    .select2-container--default .select2-search--dropdown {
+        padding: 4px;
+    }
+
+        .select2-container--default .select2-search--dropdown .select2-search__field {
+            border: 1px solid #aaa;
+            border-radius: 3px;
+            height: 32px;
+            padding: 0 8px;
+            outline: none;
+        }
+
+    .select2-container--default .select2-results > .select2-results__options {
+        max-height: 260px;
+    }
+
+    .select2-container--default .select2-results__option {
+        padding: 7px 10px;
+        font-size: .9rem;
+    }
+
+    .select2-container--default .select2-results__option--highlighted.select2-results__option--selectable {
+        background-color: #5897fb;
+        color: #fff;
+    }
+
+    .select2-container--default .select2-results__option--selected {
+        background-color: #e9eefb;
+    }
+
+    /* ---- room availability calendar ---- */
+    .rb-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 14px;
+        padding: 14px 16px;
+        background: #f8fafc;
+    }
+
+    .rb-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .rb-title {
+        font-weight: 700;
+        color: #1e293b;
+    }
+
+        .rb-title span {
+            font-weight: 500;
+            color: #64748b;
+            font-size: .85rem;
+            margin-left: 6px;
+        }
+
+    .rb-nav {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+        .rb-nav input {
+            width: 150px;
+        }
+
+    .rb-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        font-size: .78rem;
+        color: #475569;
+        margin: 10px 0;
+    }
+
+    .rb-dot {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 4px;
+        margin-right: 5px;
+        vertical-align: -1px;
+    }
+
+        .rb-dot.free {
+            background: var(--mc-free-chip-bg);
+            border: 1px solid #86efac;
+        }
+
+        .rb-dot.ap {
+            background: var(--mc-approved);
+        }
+
+        .rb-dot.pe {
+            background: var(--mc-waiting);
+        }
+
+        .rb-dot.sel {
+            background: var(--mc-selected);
+        }
+
+    .rb-hint {
+        text-align: center;
+        color: #94a3b8;
+        padding: 26px 8px;
+        font-size: .9rem;
+    }
+
+        .rb-hint i {
+            display: block;
+            font-size: 1.6rem;
+            margin-bottom: 6px;
+        }
+
+    .rb-scroll {
+        overflow-x: auto;
+        padding-bottom: 4px;
+    }
+
+    .rb-inner {
+        min-width: 720px;
+    }
+
+    .rb-ruler {
+        display: flex;
+        font-size: .7rem;
+        color: #64748b;
+    }
+
+        .rb-ruler div {
+            flex: 1;
+            border-left: 1px solid #cbd5e1;
+            padding-left: 3px;
+            white-space: nowrap;
+        }
+
+    .rb-track {
+        position: relative;
+        height: var(--mc-bar-height);
+        border: 1px solid #bbf7d0;
+        border-radius: 10px;
+        background-color: var(--mc-free-bg);
+        background-image: linear-gradient(to right, var(--mc-free-line) 1px, transparent 1px);
+        background-size: calc(100% / var(--n)) 100%;
+        overflow: hidden;
+        cursor: crosshair;
+    }
+
+    .rb-blk {
+        position: absolute;
+        top: 4px;
+        bottom: 4px;
+        border-radius: 8px;
+        color: #fff;
+        padding: 4px 7px;
+        font-size: .72rem;
+        line-height: 1.25;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        cursor: default;
+        box-shadow: 0 1px 3px rgba(0,0,0,.2);
+    }
+
+        .rb-blk.ap {
+            background: var(--mc-approved);
+        }
+
+        .rb-blk.pe {
+            background: var(--mc-waiting);
+        }
+
+        .rb-blk b {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+    .rb-sel {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        background: rgba(59,130,246,.28);
+        border-left: 2px solid var(--mc-selected);
+        border-right: 2px solid var(--mc-selected);
+        pointer-events: none;
+        z-index: 2;
+    }
+
+        .rb-sel.bad {
+            background: rgba(220,38,38,.25);
+            border-color: var(--mc-clash);
+        }
+
+    .rb-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
+        font-size: .78rem;
+    }
+
+        .rb-chips .lbl {
+            font-weight: 700;
+            color: #475569;
+            width: 62px;
+            padding-top: 4px;
+        }
+
+    .rb-chip {
+        border-radius: 999px;
+        padding: 3px 11px;
+        border: 1px solid transparent;
+    }
+
+        .rb-chip.free {
+            background: var(--mc-free-chip-bg);
+            color: var(--mc-free-chip-tx);
+            border-color: #86efac;
+        }
+
+            .rb-chip.free.click {
+                cursor: pointer;
+            }
+
+                .rb-chip.free.click:hover {
+                    background: #16a34a;
+                    color: #fff;
+                }
+
+        .rb-chip.ap {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .rb-chip.pe {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
+    .rb-note {
+        font-size: .85rem;
+        margin-top: 10px;
+        font-weight: 600;
+        min-height: 1px;
+    }
+
+        .rb-note.good {
+            color: #15803d;
+        }
+
+        .rb-note.bad {
+            color: #b91c1c;
+        }
+
+    /* ---- one row per room (all rooms of the location) ---- */
+    .rb-inner {
+        min-width: 900px;
+    }
+
+    .rb-ruler {
+        margin-left: 168px;
+    }
+
+    .rb-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 6px;
+    }
+
+    .rb-room {
+        width: 160px;
+        flex: none;
+        font-size: .78rem;
+        font-weight: 600;
+        color: #475569;
+        cursor: pointer;
+        line-height: 1.2;
+    }
+
+        .rb-room:hover {
+            color: #2563eb;
+        }
+
+    .rb-row.on .rb-room {
+        color: #2563eb;
+    }
+
+    .rb-row .rb-track {
+        flex: 1;
+        height: 44px;
+    }
+
+    .rb-row.on .rb-track {
+        border-color: #60a5fa;
+        box-shadow: 0 0 0 2px rgba(59,130,246,.2);
+    }
+
+    @@media (max-width: 576px) {
+        .rb-nav input {
+            width: 130px;
+        }
+    }
+</style>
+
+@* =========================================================================
+   SCRIPT  - settings are in "[1] SETTINGS", sections are numbered [1]..[n]
+   ========================================================================= *@
+<script>
+        /* values from the server (Razor) - used by the code below */
+        window.MeetingCfg = {
+            isNew:     '@(isNew ? "true" : "false")' === 'true',   // text in quotes -> the editor sees normal JavaScript
+            meetingId: Number('@(Model?.MeetingId ?? 0)'),
+            initDate:  '@rbInitDate',     // date shown first in the availability calendar
+            editStart: '@rbEditS',        // edit mode: saved start / end time
+            editEnd:   '@rbEditE',
+            urls: {
+                rooms:          '@Url.Action("GetRooms", "Meeting")',
+                bookings:       '@Url.Action("GetRoomBookings", "Meeting")'
+            }
+        };
+    /* =====================================================================
+       wwwroot/js/meeting-create.js        (used by Views/Meeting/CreateMeeting.cshtml)
+
+       SECTIONS (search for the number):
+         [1] settings you can change
+         [2] helpers (loads jQuery + Select2 if needed)
+         [3] searchable dropdowns
+         [4] Location -> Room
+         [5] default time (new meeting)
+         [6] room availability (all rooms of the selected location)
+         [7] save button / validation
+       The page gives us   window.MeetingCfg   (urls, isNew, dates) - see CreateMeeting.cshtml
+       ===================================================================== */
+    (function () {
+        var cfg = window.MeetingCfg;
+
+        /* [1] ===== SETTINGS - change these numbers ===== */
+        var S = {
+            BAR_FROM_HOUR: 7,        // availability bar starts at 7 AM  (grows by itself if a meeting is earlier)
+            BAR_TO_HOUR: 21,         // availability bar ends at 9 PM     (grows by itself if a meeting is later)
+            DEFAULT_MINUTES: 60,     // length of a new meeting
+            SNAP_MINUTES: 30,        // clicking the bar rounds to 30 minutes
+            MIN_FREE_MINUTES: 15     // free gaps shorter than this are not shown
+        };
+
+        /* [2] ===== HELPERS / load jQuery + Select2 if the layout has no jQuery ===== */
+        // load a script file, then call back (uses jQuery already on the page when the layout has it)
+        function loadScript(src, done) {
+            var s = document.createElement('script');
+            s.src = src; s.onload = done;
+            s.onerror = function () { console.error('Could not load ' + src); done(); };
+            document.head.appendChild(s);
+        }
+        function withSelect2(done) {
+            if (window.jQuery && jQuery.fn && jQuery.fn.select2) return done();
+            var loadS2 = function () { loadScript('https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js', done); };
+            if (window.jQuery) loadS2();
+            else loadScript('https://code.jquery.com/jquery-3.7.1.min.js', loadS2);
+        }
+        withSelect2(start);
+
+        function start() {
+            var byId = function (id) { return document.getElementById(id); };
+            var isNew = cfg.isNew;
+
+            function escapeHtml(s) {
+                return String(s).replace(/[&<>"']/g, function (c) {
+                    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+                });
+            }
+
+            /* [3] ===== SEARCHABLE DROP DOWNS ===== */
+            var $center = jQuery('#BusinessCenterId'),
+                $room = jQuery('#RoomId'),
+                $type = jQuery('#MeetingTypeId');
+            var $all = [$center, $room, $type];
+
+            $all.forEach(function ($s) {
+                $s.select2({
+                    theme: 'default',
+                    width: '100%',
+                    placeholder: $s.find('option:first').text(),
+                    language: { noResults: function () { return 'No result found'; } }
+                });
+            });
+
+            // select2 4.1 does not always focus the search box - do it ourselves
+            jQuery(document).on('select2:open', function () {
+                var f = document.querySelector('.select2-container--open .select2-search__field');
+                if (f) f.focus();
+            });
+
+            /* [4] ===== LOCATION -> ROOM (cascading) ===== */
+            var adminBox = byId('roomAdmin');
+
+            function showAdmin() {
+                var o = byId('RoomId').options[byId('RoomId').selectedIndex];
+                if (o && o.value && o.dataset.admin) {
+                    adminBox.innerHTML = '<i class="fas fa-user-gear me-1"></i>Room admin: ' +
+                        escapeHtml(o.dataset.admin) + (o.dataset.mobile ? ' (' + escapeHtml(o.dataset.mobile) + ')' : '');
+                } else { adminBox.textContent = ''; }
+            }
+
+            $center.on('change', function () {
+                rbData = [];                                          // old location rooms are not valid any more
+                $room.empty().append(new Option('-- Select Room --', '', false, false)).trigger('change');
+                adminBox.textContent = '';
+                var id = $center.val();
+                if (!id) { rbRender(); return; }
+                rbBody.innerHTML = '<div class="rb-hint"><span class="spinner-border spinner-border-sm me-2"></span>Loading rooms...</div>';
+
+                $room.prop('disabled', true);
+                adminBox.textContent = 'Loading rooms...';
+
+                fetch(cfg.urls.rooms + '?businessCenterId=' + encodeURIComponent(id), { credentials: 'same-origin' })
+                    .then(function (r) { return r.json(); })
+                    .then(function (list) {
+                        list.forEach(function (r) {
+                            var o = new Option(r.name, r.id, false, false);
+                            o.dataset.admin = r.adminName || '';
+                            o.dataset.mobile = r.adminMobile || '';
+                            $room.append(o);
+                        });
+                        $room.trigger('change');
+                        adminBox.textContent = list.length ? '' : 'No room found for this location';
+                        rbLoad();                                     // show availability of ALL rooms of this location
+                    })
+                    .catch(function () { adminBox.textContent = 'Could not load rooms'; })
+                    .finally(function () { $room.prop('disabled', false); });
+            });
+            $room.on('change', showAdmin);
+
+            // Reset button: refresh the select2 display
+            jQuery('#meetingForm').on('reset', function () {
+                setTimeout(function () { $all.forEach(function ($s) { $s.trigger('change'); }); }, 0);
+            });
+
+            /* [5] ===== NEW MEETING: default time ===== */
+            function toLocal(d) {
+                var p = function (n) { return String(n).padStart(2, '0'); };
+                return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes());
+            }
+            if (isNew) {
+                var st = byId('StartTime'), en = byId('EndTime');
+                if (!st.value) {
+                    var s0 = new Date(); s0.setMinutes(0, 0, 0); s0.setHours(s0.getHours() + 1);   // next full hour
+                    st.value = toLocal(s0);
+                    en.value = toLocal(new Date(s0.getTime() + S.DEFAULT_MINUTES * 60 * 1000));
+                }
+                st.addEventListener('change', function () {
+                    if (!st.value) return;
+                    if (!en.value || new Date(en.value) <= new Date(st.value))
+                        en.value = toLocal(new Date(new Date(st.value).getTime() + S.DEFAULT_MINUTES * 60 * 1000));
+                });
+                // no past time: the date picker greys out everything before now
+                st.min = toLocal(new Date());
+                en.min = toLocal(new Date());
+            }
+
+
+            /* [6] ===== ROOM AVAILABILITY - ALL ROOMS OF THE SELECTED LOCATION ===== */
+            // one row for every room of the location. The room chosen in the "Room" box is highlighted
+            // and it is the room that "Your selected time" is drawn on.
+            var rbDate = byId('rbDate'), rbBody = byId('rbBody'), rbNote = byId('rbNote');
+            var rbData = [], rbSeq = 0;      // rbData = [{ id, name, bookings: [{title,start,end,status,by}] }]
+            var rbInitDate = cfg.initDate, rbEditS = cfg.editStart, rbEditE = cfg.editEnd, rbExclude = cfg.meetingId;
+
+            function p2(n) { return String(n).padStart(2, '0'); }
+            // a time earlier than now (1 minute allowed, so "now" still works) - server uses the same rule
+            function isPast(v) { return !!v && new Date(v) < new Date(Date.now() - 60000); }
+            function ymd(d) { return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()); }
+            function fmtH(h) {                                   // 9.5 -> 09:30 AM
+                var m = Math.round(h * 60), hh = Math.floor(m / 60) % 24, mm = m % 60;
+                return p2(hh % 12 || 12) + ':' + p2(mm) + ' ' + (hh >= 12 ? 'PM' : 'AM');
+            }
+            function fmtHShort(h) { return (h % 12 || 12) + (h >= 12 && h < 24 ? ' PM' : ' AM'); }
+            function rbDayStart() {
+                if (!rbDate.value) return null;
+                var a = rbDate.value.split('-');
+                return new Date(+a[0], +a[1] - 1, +a[2], 0, 0, 0);
+            }
+            function rbSelection() {
+                var s, e;
+                if (isNew) { s = byId('StartTime').value; e = byId('EndTime').value; } else { s = rbEditS; e = rbEditE; }
+                if (!s || !e) return null;
+                var a = new Date(s), b = new Date(e);
+                if (isNaN(a) || isNaN(b) || b <= a) return null;
+                return { a: a, b: b };
+            }
+
+            // the rooms of the selected location = the options of the Room box
+            function rbRooms() {
+                var list = [];
+                byId('RoomId').querySelectorAll('option').forEach(function (o) { if (o.value) list.push({ id: o.value, name: o.text }); });
+                return list;
+            }
+
+            function rbLoad() {
+                var rooms = rbRooms(), d = rbDate.value;
+                if (!$center.val() || !d || !rooms.length) { rbData = []; rbRender(); return; }
+                var my = ++rbSeq;
+                rbBody.innerHTML = '<div class="rb-hint"><span class="spinner-border spinner-border-sm me-2"></span>Loading...</div>';
+                rbNote.textContent = '';
+                // one request per room (the same GetRoomBookings that was used before), all at the same time
+                Promise.all(rooms.map(function (rm) {
+                    return fetch(cfg.urls.bookings + '?roomId=' + encodeURIComponent(rm.id) + '&date=' + d + '&meetingId=' + rbExclude,
+                                 { credentials: 'same-origin' })
+                        .then(function (r) { return r.json(); })
+                        .then(function (list) {
+                            return {
+                                id: rm.id, name: rm.name,
+                                bookings: list.map(function (x) {
+                                    return { title: x.title || '', start: new Date(x.start), end: new Date(x.end), status: x.status, by: x.requestedBy || '' };
+                                })
+                            };
+                        })
+                        .catch(function () { return { id: rm.id, name: rm.name, bookings: [], failed: true }; });
+                })).then(function (data) {
+                    if (my !== rbSeq) return;                    // an newer request is running
+                    rbData = data; rbRender();
+                });
+            }
+
+            function rbRender() {
+                rbNote.textContent = ''; rbNote.className = 'rb-note';
+                var co = byId('BusinessCenterId').options[byId('BusinessCenterId').selectedIndex];
+                byId('rbRoomName').textContent = (co && co.value) ? '- ' + co.text : '';
+
+                if (!$center.val()) {
+                    rbBody.innerHTML = '<div class="rb-hint"><i class="far fa-calendar"></i>Select a Location to see booked and free time of all its rooms.</div>';
+                    return;
+                }
+                if (!rbData.length) { rbBody.innerHTML = '<div class="rb-hint">No room found for this location.</div>'; return; }
+                var ds = rbDayStart();
+                if (!ds) { rbBody.innerHTML = '<div class="rb-hint">Select a date.</div>'; return; }
+                var de = new Date(ds.getTime() + 864e5);
+                function hrs(d) { return (Math.min(Math.max(d, ds), de) - ds) / 36e5; }
+
+                var chosen = String($room.val() || '');           // the room picked in the Room box
+                var sel = rbSelection(), selS = null, selE = null;
+                if (sel && sel.b > ds && sel.a < de) { selS = hrs(sel.a); selE = hrs(sel.b); }
+
+                // bookings of every room that touch this day
+                var rooms = rbData.map(function (rm) {
+                    return {
+                        id: String(rm.id), name: rm.name, failed: rm.failed,
+                        items: rm.bookings.filter(function (b) { return b.end > ds && b.start < de; })
+                                          .map(function (b) { return { b: b, s: hrs(b.start), e: hrs(b.end) }; })
+                                          .sort(function (x, y) { return x.s - y.s; })
+                    };
+                });
+
+                // the bar grows when a meeting is earlier / later than the normal hours
+                var lo = S.BAR_FROM_HOUR, hi = S.BAR_TO_HOUR;
+                rooms.forEach(function (rm) { rm.items.forEach(function (it) { lo = Math.min(lo, Math.floor(it.s)); hi = Math.max(hi, Math.ceil(it.e)); }); });
+                if (selS !== null) { lo = Math.min(lo, Math.floor(selS)); hi = Math.max(hi, Math.ceil(selE)); }
+                var n = hi - lo;
+                function pc(h) { return (h - lo) / n * 100; }
+
+                var ruler = '';
+                for (var h = lo; h < hi; h++) ruler += '<div>' + fmtHShort(h) + '</div>';
+
+                var clash = [], rows = '';
+                rooms.forEach(function (rm) {
+                    var on = rm.id === chosen;
+                    var blocks = rm.items.map(function (it) {
+                        var cls = it.b.status === 1 ? 'ap' : 'pe';
+                        var tip = rm.name + '  |  ' + fmtH(it.s) + ' - ' + fmtH(it.e) + '  |  ' + it.b.title + (it.b.by ? '  |  ' + it.b.by : '') +
+                                  (it.b.status === 1 ? '  (approved)' : '  (waiting for approval)');
+                        if (on && selS !== null && it.s < selE && it.e > selS) clash.push(it);
+                        return '<div class="rb-blk ' + cls + '" style="left:' + pc(it.s) + '%;width:' + (pc(it.e) - pc(it.s)) + '%" title="' + escapeHtml(tip) + '">' +
+                               '<b>' + escapeHtml(it.b.title || 'Meeting') + '</b>' + fmtH(it.s) + ' - ' + fmtH(it.e) + '</div>';
+                    }).join('');
+                    // "Your selected time" only on the chosen room
+                    var selBox = (on && selS !== null)
+                        ? '<div class="rb-sel ' + (clash.length ? 'bad' : '') + '" style="left:' + pc(selS) + '%;width:' + (pc(selE) - pc(selS)) + '%"></div>' : '';
+                    rows += '<div class="rb-row ' + (on ? 'on' : '') + '">' +
+                            '<div class="rb-room" data-room="' + escapeHtml(rm.id) + '" title="' + (isNew ? 'Click to choose this room' : '') + '">' +
+                            escapeHtml(rm.name) + (rm.failed ? ' <span class="text-danger">(not loaded)</span>' : '') + '</div>' +
+                            '<div class="rb-track" data-room="' + escapeHtml(rm.id) + '" style="--n:' + n + '" data-lo="' + lo + '" data-n="' + n + '">' + blocks + selBox + '</div></div>';
+                });
+
+                // free gaps of the chosen room (on today the time that has already passed is not free any more)
+                var chips = '', cr = rooms.filter(function (rm) { return rm.id === chosen; })[0];
+                if (cr) {
+                    var now = new Date(), cur = lo, gaps = [];
+                    if (ymd(now) === ymd(ds)) cur = Math.max(lo, (now - ds) / 36e5);
+                    cr.items.forEach(function (it) {
+                        if (it.s - cur >= S.MIN_FREE_MINUTES / 60) gaps.push([cur, Math.min(it.s, hi)]);
+                        cur = Math.max(cur, it.e);
+                    });
+                    if (hi - cur >= S.MIN_FREE_MINUTES / 60) gaps.push([cur, hi]);
+
+                    chips = '<div class="rb-chips"><span class="lbl">Booked</span>' +
+                        (cr.items.length ? cr.items.map(function (it) {
+                            return '<span class="rb-chip ' + (it.b.status === 1 ? 'ap' : 'pe') + '">' + fmtH(it.s) + ' - ' + fmtH(it.e) +
+                                   (it.b.by ? ' (' + escapeHtml(it.b.by) + ')' : '') + '</span>';
+                        }).join('') : '<span class="text-muted">Nothing booked on this day</span>') + '</div>' +
+                        '<div class="rb-chips"><span class="lbl">Free</span>' +
+                        (gaps.length ? gaps.map(function (g) {
+                            return '<span class="rb-chip free ' + (isNew ? 'click' : '') + '" data-s="' + g[0] + '" data-e="' + g[1] + '"' +
+                                   (isNew ? ' title="Click to use this time"' : '') + '>' + fmtH(g[0]) + ' - ' + fmtH(g[1]) + '</span>';
+                        }).join('') : '<span class="text-muted">No free time left</span>') + '</div>';
+                }
+
+                rbBody.innerHTML =
+                    '<div class="rb-scroll"><div class="rb-inner">' +
+                    '<div class="rb-ruler">' + ruler + '</div>' + rows +
+                    '</div></div>' + chips;
+
+                // note about the selected time (chosen room)
+                if (isNew && sel && isPast(byId('StartTime').value)) {
+                    rbNote.className = 'rb-note bad';
+                    rbNote.innerHTML = '<i class="fas fa-triangle-exclamation me-1"></i>Past date or time is not allowed. Please choose a current or future time.';
+                } else if (sel && selS !== null && cr) {
+                    var when = fmtH(selS) + ' - ' + fmtH(selE);
+                    if (clash.length) {
+                        rbNote.className = 'rb-note bad';
+                        rbNote.innerHTML = '<i class="fas fa-triangle-exclamation me-1"></i>Your selected time (' + when + ') is already booked in ' + escapeHtml(cr.name) + ' by "' +
+                            escapeHtml(clash[0].b.title || 'Meeting') + '" (' + fmtH(clash[0].s) + ' - ' + fmtH(clash[0].e) + '). Please choose a free time.';
+                    } else {
+                        rbNote.className = 'rb-note good';
+                        rbNote.innerHTML = '<i class="fas fa-circle-check me-1"></i>Your selected time (' + when + ') is free in ' + escapeHtml(cr.name) + '.';
+                    }
+                } else if (!chosen) {
+                    rbNote.innerHTML = '<span class="text-muted">Choose a Room above (or click a room name in the calendar).</span>';
+                }
+
+                if (isNew) {
+                    // click a room name -> that room is selected
+                    rbBody.querySelectorAll('.rb-room').forEach(function (el) {
+                        el.addEventListener('click', function () { rbChooseRoom(el.dataset.room); });
+                    });
+                    // click the free area of a bar -> that room + start time = clicked half hour
+                    rbBody.querySelectorAll('.rb-track').forEach(function (tr) {
+                        tr.addEventListener('click', function (e) {
+                            if (e.target.closest('.rb-blk')) return;
+                            var r = this.getBoundingClientRect(), lo2 = +this.dataset.lo, n2 = +this.dataset.n;
+                            var hh = lo2 + (e.clientX - r.left) / r.width * n2;
+                            rbPick(Math.floor(hh * 60 / S.SNAP_MINUTES) * S.SNAP_MINUTES / 60, null, this.dataset.room);
+                        });
+                    });
+                    rbBody.querySelectorAll('.rb-chip.free').forEach(function (c) {
+                        c.addEventListener('click', function () { rbPick(+c.dataset.s, +c.dataset.e, null); });
+                    });
+                }
+            }
+
+            // choose a room from the calendar (the Room box follows)
+            function rbChooseRoom(id) {
+                if (String($room.val() || '') === String(id)) return;
+                $room.val(id).trigger('change');                  // Select2 + room admin + calendar redraw
+            }
+
+            // set Start / End from the calendar (keeps the length of the meeting, default 1 hour)
+            function rbPick(startH, maxEndH, roomId) {
+                var ds = rbDayStart(); if (!ds) return;
+                var sel = rbSelection(), dur = sel ? (sel.b - sel.a) : S.DEFAULT_MINUTES * 6e4;
+                var a = new Date(ds.getTime() + Math.round(startH * 60) * 6e4);
+                var b = new Date(a.getTime() + dur);
+                if (isPast(toLocal(a))) { alert('Past time cannot be selected.'); return; }
+                if (maxEndH !== null) {
+                    var lim = new Date(ds.getTime() + Math.round(maxEndH * 60) * 6e4);
+                    if (b > lim) b = lim;
+                }
+                if (roomId) rbChooseRoom(roomId);
+                byId('StartTime').value = toLocal(a);
+                byId('EndTime').value = toLocal(b);
+                rbRender();
+            }
+
+            // the calendar date moved -> New meeting: move Start / End to that date (time stays)
+            function rbDateChanged() {
+                var ds = rbDayStart();
+                if (ds && isNew) {
+                    ['StartTime', 'EndTime'].forEach(function (id) {
+                        var el = byId(id); if (!el.value) return;
+                        var t = new Date(el.value);
+                        el.value = toLocal(new Date(ds.getFullYear(), ds.getMonth(), ds.getDate(), t.getHours(), t.getMinutes()));
+                    });
+                }
+                rbLoad();
+            }
+            function rbShift(delta) {
+                var d = rbDayStart() || new Date(); d.setDate(d.getDate() + delta);
+                rbDate.value = ymd(d); rbDateChanged();
+            }
+            function rbInit() {
+                var v = '';
+                if (isNew && byId('StartTime').value) v = byId('StartTime').value.substring(0, 10);
+                rbDate.value = v || rbInitDate || ymd(new Date());
+            }
+
+            byId('rbPrev').addEventListener('click', function () { rbShift(-1); });
+            byId('rbNext').addEventListener('click', function () { rbShift(1); });
+            byId('rbToday').addEventListener('click', function () { rbDate.value = ymd(new Date()); rbDateChanged(); });
+            rbDate.addEventListener('change', rbDateChanged);
+            // Room box changed: the bookings of all rooms are already loaded - only draw again
+            $room.on('change', function () { if (rbData.length) rbRender(); });
+
+            if (isNew) {
+                byId('StartTime').addEventListener('change', function () {
+                    var d = this.value ? this.value.substring(0, 10) : '';
+                    if (d && d !== rbDate.value) { rbDate.value = d; rbLoad(); } else { rbRender(); }
+                });
+                byId('EndTime').addEventListener('change', rbRender);
+                byId('EndTime').addEventListener('input', rbRender);
+            }
+            jQuery('#meetingForm').on('reset', function () { setTimeout(function () { rbInit(); rbLoad(); }, 0); });
+
+            rbInit();
+            rbLoad();
+
+            /* [7] ===== SAVE BUTTON / VALIDATION ===== */
+            var btn = byId('btnSave'), btnHtml = btn.innerHTML;
+            function lockSave()   { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Saving...'; }
+            function unlockSave() { btn.disabled = false; btn.innerHTML = btnHtml; }
+            function clock(d) { return fmtH(d.getHours() + d.getMinutes() / 60); }
+
+            // first booking of this room that touches a..b (looks at every day between a and b, normally one day)
+            function findClash(a, b) {
+                var days = [], d = new Date(a.getFullYear(), a.getMonth(), a.getDate());
+                while (d <= b && days.length < 31) { days.push(ymd(d)); d.setDate(d.getDate() + 1); }
+                return Promise.all(days.map(function (day) {
+                    return fetch(cfg.urls.bookings + '?roomId=' + encodeURIComponent($room.val()) + '&date=' + day + '&meetingId=' + rbExclude,
+                                 { credentials: 'same-origin' }).then(function (r) { return r.json(); });
+                })).then(function (lists) {
+                    var all = [].concat.apply([], lists);
+                    return all.find(function (x) { return new Date(x.start) < b && new Date(x.end) > a; }) || null;
+                });
+            }
+
+            byId('meetingForm').addEventListener('submit', function (e) {
+                var form = this;
+                if (form.dataset.checked === '1') return;            // clash check already passed - let the form go
+
+                var errs = [];
+                if (!$center.val()) errs.push('Select Location.');
+                if (!$room.val()) errs.push('Select Room.');
+                if (isNew) {
+                    var sv = byId('StartTime').value, ev = byId('EndTime').value;
+                    if (!sv) errs.push('Start Time is required.');
+                    if (!ev) errs.push('End Time is required.');
+                    if (sv && ev && new Date(ev) <= new Date(sv)) errs.push('End Time must be after Start Time.');
+                    if (sv && isPast(sv)) errs.push('Past date or time is not allowed. Please choose a current or future time.');
+                }
+                if (!$type.val()) errs.push('Select Meeting Type.');
+                if (!byId('MeetingTitle').value.trim()) errs.push('Meeting Title is required.');
+                if (!byId('Agenda').value.trim()) errs.push('Agenda is required.');
+
+                if (errs.length > 0) {
+                    e.preventDefault();
+                    alert(errs.join('\n'));
+                    return false;
+                }
+
+                if (!isNew) { lockSave(); return; }                  // edit: the time does not change
+
+                // NEW meeting: ask the server once more if somebody booked this time meanwhile
+                e.preventDefault();
+                lockSave();
+                findClash(new Date(byId('StartTime').value), new Date(byId('EndTime').value))
+                    .then(function (c) {
+                        if (c) {
+                            unlockSave();
+                            alert('This room is already booked at that time: "' + (c.title || 'Meeting') + '" (' +
+                                  clock(new Date(c.start)) + ' - ' + clock(new Date(c.end)) + '). Please choose a free time.');
+                            rbLoad();
+                            return;
+                        }
+                        form.dataset.checked = '1';
+                        form.submit();
+                    })
+                    .catch(function () { unlockSave(); alert('Could not check the room time. Please try again.'); });
+            });
+        }
+    })();
+</script>

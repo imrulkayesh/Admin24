@@ -1,0 +1,100 @@
+﻿
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - Admin 24/7</title>
+
+    <!-- AdminLTE CSS -->
+    <link rel="preload" href="~/css/adminlte.css" as="style" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/adminlte.css" asp-append-version="true" />
+
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="~/css/bootstrap-icons.min.css" asp-append-version="true" />
+
+    <!-- Bootstrap 5 -->
+    <link rel="stylesheet" href="~/css/bootstrap.min.css" asp-append-version="true" />
+
+    <!-- Custom DataTable CSS -->
+    <link rel="stylesheet" href="~/css/datatable.css" asp-append-version="true" />
+
+    <!-- SweetAlert2 CSS -->
+    <link rel="stylesheet" href="~/css/sweetalert2.min.css" asp-append-version="true" />
+    <!-- Site CSS -->
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="~/css/all.min.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/select2.min.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/rowgroup.datatables.min.css" asp-append-version="true" />
+    <!-- old Font Awesome 4 icon names (UC_TASKMANAGER.ICON) - here in the head so the menu icons never flash -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/v4-shims.min.css" />
+    <!-- Admin 360 standard look: entry pages, list pages, report pages, menu (ALWAYS the last css) -->
+    <link rel="stylesheet" href="~/css/app-standard.css" asp-append-version="true" />
+
+
+</head>
+<body class="layout-fixed sidebar-expand-lg sidebar-open bg-body-tertiary sd-preload">
+    @* sd-preload: no menu animation while the page loads *@
+
+    <div class="app-wrapper">
+        <partial name="_TopNavBar.cshtml" />
+        <partial name="_SideBar.cshtml" />
+
+        <main class="app-main" style="padding: 0%;">
+            @* id="appContent": only this part is replaced when a menu link is clicked (see wwwroot/js/app-standard.js) *@
+            <div class="app-content" id="appContent">
+                @RenderBody()
+            </div>
+        </main>
+
+        <partial name="_Footer.cshtml" />
+    </div>
+
+    <!-- Scripts -->
+    <script src="~/js/jquery-3.7.1.min.js" asp-append-version="true"></script>
+    <script src="~/js/bootstrap.bundle.min.js" asp-append-version="true"></script>
+    <script src="~/js/adminlte.js" asp-append-version="true"></script>
+    <script src="~/js/sweetalert2.min.js" asp-append-version="true"></script>
+    <script src="~/js/select2.min.js" asp-append-version="true"></script>
+    <script src="~/js/xlsx.full.min.js" asp-append-version="true"></script>
+    <script src="~/js/jquery.datatables.min.js" asp-append-version="true"></script>
+    <script src="~/js/datatables.bootstrap5.min.js" asp-append-version="true"></script>
+    <script src="~/js/datatables.buttons.min.js" asp-append-version="true"></script>
+    <script src="~/js/buttons.bootstrap5.min.js" asp-append-version="true"></script>
+    <script src="~/js/jszip.min.js" asp-append-version="true"></script>
+    <script src="~/js/pdfmake.min.js" asp-append-version="true"></script>
+    <script src="~/js/vfs_fonts.js" asp-append-version="true"></script>
+    <script src="~/js/buttons.html5.min.js" asp-append-version="true"></script>
+    <script src="~/js/buttons.print.min.js" asp-append-version="true"></script>
+    <script src="~/js/datatables.rowgroup.min.js" asp-append-version="true"></script>
+    <script src="~/js/jspdf.umd.min.js" asp-append-version="true"></script>
+    <script src="~/js/jspdf.plugin.autotable.min.js" asp-append-version="true"></script>
+    <!-- ChartJS (was ../../plugins/... : that path breaks on pages like /Meeting/ViewMeeting/5) -->
+    <script src="~/plugins/chart.js/Chart.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    @* jsPDF is already loaded above from ~/js/jspdf.umd.min.js - the second copy from the internet was removed *@
+
+    <!--Common Alert-->
+    <partial name="~/Views/PartialView/_SweetAlert.cshtml" />
+    <!--Common CSS-->
+    <partial name="~/Views/PartialView/_CustomeCSS.cshtml" />
+    <!--Common JS-->
+    <partial name="~/Views/PartialView/_CommonJS.cshtml" />
+    <partial name="~/Views/PartialView/_ValidationPartialView.cshtml" />
+    <!-- Admin 360 standard code: SD.toast, SD.post, SD.confirm, SD.initList, sidebar memory, smart navigation -->
+    <script src="~/js/app-standard.js" asp-append-version="true"></script>
+    <script>
+        $(document).ready(function () {
+            $('.select2').select2();
+        });
+    </script>
+
+    @* id="pageScripts": scripts of the page (@section Scripts). They are also run again after a smart navigation *@
+    <div id="pageScripts">
+        @await RenderSectionAsync("Scripts", required: false)
+    </div>
+
+</body>
+</html>

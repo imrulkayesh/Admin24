@@ -1,0 +1,243 @@
+﻿@* Views/Meeting/MeetingList.cshtml  (old: MeetingList.aspx)
+   LIST PAGE - uses the standard look: wwwroot/css/app-standard.css  and  wwwroot/js/app-standard.js (SD.initList).
+   Today's meetings come first, then the coming days, then the past. *@
+@model AlphaCare.Models.MeetingListViewModel
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = "Meeting List";
+
+    var today = DateTime.Today;
+    var now = DateTime.Now;
+
+    // Waiting for Approval / Approved / Rejected / Cancelled
+    var sections = new[]
+    {
+        (Id: "waiting",   Title: "Waiting for Approval", Icon: "fa-hourglass-half", Color: "#f59e0b", Rows: Model.Waiting,   CanCancel: true),
+        (Id: "approved",  Title: "Approved",             Icon: "fa-circle-check",   Color: "#16a34a", Rows: Model.Approved,  CanCancel: true),
+        (Id: "rejected",  Title: "Rejected",             Icon: "fa-circle-xmark",   Color: "#dc2626", Rows: Model.Rejected,  CanCancel: false),
+        (Id: "cancelled", Title: "Cancelled",            Icon: "fa-ban",            Color: "#64748b", Rows: Model.Cancelled, CanCancel: false)
+    };
+
+    // today / future / past + the little label shown in the list
+    (string Key, string Label) DayInfo(DateTime? start)
+    {
+        if (start == null) return ("past", "-");
+        int diff = (start.Value.Date - today).Days;
+        if (diff == 0) return ("today", "Today");
+        if (diff == 1) return ("future", "Tomorrow");
+        if (diff > 1) return ("future", $"In {diff} days");
+        if (diff == -1) return ("past", "Yesterday");
+        return ("past", $"{-diff} days ago");
+    }
+
+    // TODAY first (earliest first), then the coming days (nearest first), then the past (latest first)
+    List<AlphaCare.Models.MeetingListItemModel> TodayFirst(List<AlphaCare.Models.MeetingListItemModel> rows)
+    {
+        int Group(AlphaCare.Models.MeetingListItemModel r) =>
+            r.STARTTIME == null ? 2 : r.STARTTIME.Value.Date == today ? 0 : r.STARTTIME.Value.Date > today ? 1 : 2;
+        return rows.OrderBy(Group)
+                   .ThenBy(r => Group(r) == 2 ? 0 : (r.STARTTIME?.Ticks ?? 0))
+                   .ThenByDescending(r => Group(r) == 2 ? (r.STARTTIME?.Ticks ?? 0) : 0)
+                   .ToList();
+    }
+}
+
+<div class="sd-page" data-smart-page>
+    <div class="card shadow-sm border-0">
+
+        <div class="sd-head">
+            <h5 class="mb-0"><i class="fas fa-list-check me-2"></i>Meeting List</h5>
+            <div class="d-flex align-items-center gap-3 flex-wrap">
+                <span class="sd-date"><i class="far fa-calendar me-1"></i>@today.ToString("dddd, dd MMMM yyyy")</span>
+                <a href="@Url.Action("CreateMeeting", "Meeting")" class="btn btn-light btn-sm fw-semibold">
+                    <i class="fas fa-plus me-1"></i> New Meeting
+                </a>
+            </div>
+        </div>
+
+        <div class="card-body">
+            @Html.AntiForgeryToken()
+
+            <!-- tabs -->
+            <div class="sd-tabs mb-3">
+                @for (int i = 0; i < sections.Length; i++)
+                {
+                    var sec = sections[i];
+                    <button type="button" class="sd-tab @(i == 0 ? "active" : "")" data-pane="@sec.Id" style="--c:@sec.Color">
+                        <i class="fas @sec.Icon"></i> @sec.Title <span class="cnt" id="cnt-@sec.Id">@sec.Rows.Count</span>
+                    </button>
+                }
+            </div>
+
+            <!-- day filter tiles (numbers belong to the open tab) -->
+            <div class="sd-tiles" id="sdTiles">
+                <button type="button" class="sd-tile active" data-day="all" style="--c:#4f46e5;--bg:#eef2ff">
+                    <span class="ico"><i class="fas fa-layer-group"></i></span>
+                    <span><div class="num" data-num="all">0</div><div class="lbl">All</div><div class="sub">in this tab</div></span>
+                </button>
+                <button type="button" class="sd-tile" data-day="today" style="--c:#16a34a;--bg:#dcfce7">
+                    <span class="ico"><i class="fas fa-sun"></i></span>
+                    <span><div class="num" data-num="today">0</div><div class="lbl">Today</div><div class="sub">today's date</div></span>
+                </button>
+                <button type="button" class="sd-tile" data-day="future" style="--c:#2563eb;--bg:#dbeafe">
+                    <span class="ico"><i class="fas fa-forward"></i></span>
+                    <span><div class="num" data-num="future">0</div><div class="lbl">Upcoming</div><div class="sub">from tomorrow onwards</div></span>
+                </button>
+                <button type="button" class="sd-tile" data-day="past" style="--c:#64748b;--bg:#f1f5f9">
+                    <span class="ico"><i class="fas fa-clock-rotate-left"></i></span>
+                    <span><div class="num" data-num="past">0</div><div class="lbl">Past</div><div class="sub">before today</div></span>
+                </button>
+            </div>
+
+            <!-- search + date -->
+            <div class="sd-tools">
+                <div class="input-group grow">
+                    <span class="input-group-text bg-white"><i class="fas fa-magnifying-glass text-muted"></i></span>
+                    <input type="text" class="form-control" id="sdSearch" placeholder="Search title, room, admin..." autocomplete="off" />
+                </div>
+                <div class="input-group" style="max-width:210px">
+                    <span class="input-group-text bg-white"><i class="far fa-calendar text-muted"></i></span>
+                    <input type="date" class="form-control" id="sdDate" title="Show one date only" />
+                </div>
+                <button type="button" class="sd-link" id="sdClear" style="display:none"><i class="fas fa-xmark me-1"></i>Clear filters</button>
+                <button type="button" class="sd-link" id="sdResetSort" style="display:none"><i class="fas fa-arrow-rotate-left me-1"></i>Default order (today first)</button>
+            </div>
+
+            <!-- lists -->
+            @for (int i = 0; i < sections.Length; i++)
+            {
+                var sec = sections[i];
+                var rows = TodayFirst(sec.Rows);
+                <div class="sd-pane @(i == 0 ? "active" : "")" id="pane-@sec.Id">
+                    <div class="sd-wrap table-responsive">
+                        <table class="sd-table">
+                            <thead>
+                                <tr>
+                                    <th class="text-center">Action</th>
+                                    <th class="sortable" data-sort="room">Meeting Room<i class="fas fa-sort arr"></i></th>
+                                    <th class="sortable" data-sort="start">Date &amp; Time<i class="fas fa-sort arr"></i></th>
+                                    <th class="sortable" data-sort="title">Meeting Title<i class="fas fa-sort arr"></i></th>
+                                    <th class="sortable" data-sort="admin">Room Admin<i class="fas fa-sort arr"></i></th>
+                                    <th>Mobile</th>
+                                    <th>Email</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @{
+                                    int idx = 0;
+                                }
+                                @foreach (var r in rows)
+                                {
+                                    var di = DayInfo(r.STARTTIME);
+                                    bool live = r.STARTTIME <= now && r.ENDTIME >= now;
+                                    bool isMine = string.Equals((r.CREATEDBY ?? "").Trim(), Model.StaffId.Trim(), StringComparison.OrdinalIgnoreCase);
+                                    bool notEnded = r.ENDTIME.HasValue && r.ENDTIME.Value >= now;
+                                    bool canEdit = sec.Id == "waiting" && isMine && notEnded;     // edit only while waiting
+                                    bool canCancel = sec.CanCancel && isMine && notEnded;         // waiting + approved
+                                    string search = $"{r.MEETINGTITLE} {r.RoomDisplay} {r.ADMINNAME} {r.ADMINMOBILE} {r.ADMINMAIL}".ToLower();
+                                    string rowCls = di.Key == "today" ? "is-today" : di.Key == "past" ? "is-past" : "";
+                                    <tr class="@rowCls" data-search="@search" data-id="@r.ID"
+                                        data-day="@di.Key" data-date="@(r.STARTTIME?.ToString("yyyy-MM-dd"))" data-i="@(idx++)"
+                                        data-k-start="@(r.STARTTIME?.Ticks ?? 0)" data-k-title="@((r.MEETINGTITLE ?? "").ToLower())"
+                                        data-k-room="@r.RoomDisplay.ToLower()" data-k-admin="@((r.ADMINNAME ?? "").ToLower())">
+
+                                        @* 1. Action *@
+                                        <td class="text-center text-nowrap" data-label="Action">
+                                            <div class="sd-cell">
+                                                @if (canEdit)
+                                                {
+                                                    <a class="sd-btn edit" title="Edit" href="@Url.Action("CreateMeeting", "Meeting", new { id = r.ID })"><i class="fas fa-pen-to-square"></i></a>
+                                                }
+                                                <a class="sd-btn view" title="View Details" href="@Url.Action("ViewMeeting", "Meeting", new { id = r.ID })"><i class="fas fa-eye"></i></a>
+                                                @if (canCancel)
+                                                {
+                                                    <button type="button" class="sd-btn cancel btn-cancel-req" title="Cancel Request" data-id="@r.ID" data-title="@r.MEETINGTITLE"><i class="fas fa-ban"></i></button>
+                                                }
+                                            </div>
+                                        </td>
+
+                                        @* 2. Meeting Room *@
+                                        <td data-label="Meeting Room"><div class="sd-cell">@r.RoomDisplay</div></td>
+
+                                        @* 3. Date & Time *@
+                                        <td class="sd-date text-nowrap" data-label="Date &amp; Time">
+                                            <div class="sd-cell">
+                                                <b>@(r.STARTTIME?.ToString("dd MMM yyyy") ?? "-")</b>
+                                                <small>@(r.STARTTIME?.ToString("hh:mm tt")) @(r.ENDTIME.HasValue ? "- " + r.ENDTIME.Value.ToString("hh:mm tt") : "")</small>
+                                                <div class="mt-1">
+                                                    <span class="sd-badge @di.Key">@di.Label</span>
+                                                    @if (live)
+                                                    {
+                                                        <span class="sd-badge sd-live"><i class="fas fa-circle"></i> Live now</span>
+                                                    }
+                                                </div>
+                                            </div>
+                                        </td>
+
+                                        @* 4. Meeting Title *@
+                                        <td data-label="Meeting Title"><div class="sd-cell"><a class="sd-title" title="View Details" href="@Url.Action("ViewMeeting", "Meeting", new { id = r.ID })">@r.MEETINGTITLE</a></div></td>
+
+                                        @* 5. Room Admin *@
+                                        <td data-label="Room Admin"><div class="sd-cell">@r.ADMINNAME</div></td>
+
+                                        @* 6. Mobile *@
+                                        <td data-label="Mobile">
+                                            <div class="sd-cell">
+                                                @if (!string.IsNullOrWhiteSpace(r.ADMINMOBILE))
+                                                {
+                                                    <a href="tel:@r.ADMINMOBILE" class="text-decoration-none">@r.ADMINMOBILE</a>
+                                                }
+                                            </div>
+                                        </td>
+
+                                        @* 7. Email *@
+                                        <td data-label="Email">
+                                            <div class="sd-cell">
+                                                @if (!string.IsNullOrWhiteSpace(r.ADMINMAIL))
+                                                {
+                                                    <a href="mailto:@r.ADMINMAIL" class="text-decoration-none">@r.ADMINMAIL</a>
+                                                }
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="sd-empty" data-empty="all" style="@(rows.Count == 0 ? "" : "display:none")">
+                        <i class="far fa-calendar-xmark"></i> No meeting in "@sec.Title".
+                    </div>
+                    <div class="sd-empty" data-empty="filter" style="display:none">
+                        <i class="fas fa-filter-circle-xmark"></i> No meeting matched your filter.
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@* =========================================================================
+   SCRIPT - everything common (tabs, tiles, search, sort, confirm box, message) is in app-standard.js.
+   Only what is special for this page is here: the CANCEL REQUEST button.
+   ========================================================================= *@
+@section Scripts {
+    <script>
+        (function () {
+            SD.initList();                                   // tabs + tiles + search + date + sort
+
+            document.querySelectorAll('.btn-cancel-req').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    SD.confirm({
+                        title: 'Cancel Request', text: b.dataset.title, tone: 'danger', icon: 'fa-ban',
+                        yesText: 'Yes, Cancel Meeting', noText: 'No, keep it',
+                        reason: { label: 'Reason (optional)', max: 200 },          // asks for a reason
+                        run: function (reason) { return SD.post('@Url.Action("CancelMeeting", "Meeting")', { id: b.dataset.id, reason: reason }); }
+                    }).then(function (res) {
+                        if (res && res.success) { SD.toast(res.message); setTimeout(function () { location.hash = '#cancelled'; location.reload(); }, 900); }
+                    });
+                });
+            });
+        })();
+    </script>
+}

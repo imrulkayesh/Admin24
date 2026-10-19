@@ -1,0 +1,1039 @@
+﻿@using System.Text.Json
+@model AlphaCare.Models.Dashboard_Model.UserDashboardViewModel
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = "Home Page";
+    // no type name needed here, so it works with whatever namespace ModuleModel lives in
+    var modulesJson = Model?.Modules == null ? "[]" : JsonSerializer.Serialize(Model.Modules);
+    var selectedModule = Model?.SelectedModuleId?.ToString() ?? "null";
+}
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/v4-shims.min.css" /> @* old FA4 icon names from UC_MODULE.ICON *@
+
+@* =========================================================================
+   STYLES   (colours: .hm-page { --hm-... } block first)
+   [A] page   [B] module cards   [C] quick links   [D] notice board   [E] upcoming events   [F] toast
+   ========================================================================= *@
+<style>
+    /* ===== [A] PAGE ===== */
+    .hm-page {
+        --hm-primary: #4f46e5;
+        --hm-text: #1e293b;
+        --hm-muted: #64748b;
+        --hm-border: #e8ecf3;
+        --hm-card: #ffffff;
+        --hm-bg: #f4f6fb;
+        font-family: 'Poppins', 'Segoe UI', Arial, sans-serif;
+        color: var(--hm-text);
+        background: var(--hm-bg);
+        padding: 18px 20px 40px;
+        min-height: 100%;
+    }
+
+        .hm-page * {
+            box-sizing: border-box;
+        }
+
+    .hm-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 16px;
+    }
+
+    .hm-crumb {
+        font-size: .9rem;
+        color: var(--hm-muted);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+        .hm-crumb a {
+            color: var(--hm-primary);
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .hm-crumb b {
+            color: var(--hm-text);
+        }
+
+    .hm-sec-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin: 6px 0 12px;
+    }
+
+    .hm-sec-title {
+        font-weight: 700;
+        font-size: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .hm-chip {
+        font-size: .7rem;
+        font-weight: 700;
+        background: #e0e7ff;
+        color: #3730a3;
+        padding: 3px 10px;
+        border-radius: 999px;
+    }
+
+    .hm-tools {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .hm-search {
+        position: relative;
+        width: 280px;
+        max-width: 100%;
+    }
+
+        .hm-search input {
+            width: 100%;
+            height: 40px;
+            padding: 0 44px 0 40px;
+            border: 1.5px solid var(--hm-border);
+            border-radius: 12px;
+            background: #fff;
+            font: inherit;
+            font-size: .88rem;
+            outline: none;
+            transition: border-color .2s, box-shadow .2s;
+        }
+
+            .hm-search input:focus {
+                border-color: var(--hm-primary);
+                box-shadow: 0 0 0 4px rgba(79,70,229,.12);
+            }
+
+        .hm-search i {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #94a3b8;
+            font-size: .85rem;
+        }
+
+        .hm-search kbd {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            font: inherit;
+            font-size: .68rem;
+            color: #94a3b8;
+            border: 1px solid var(--hm-border);
+            border-radius: 6px;
+            padding: 1px 7px;
+            background: #f8fafc;
+        }
+
+    .hm-seg {
+        display: inline-flex;
+        background: #fff;
+        border: 1.5px solid var(--hm-border);
+        border-radius: 12px;
+        padding: 3px;
+    }
+
+        .hm-seg button {
+            border: 0;
+            background: none;
+            width: 34px;
+            height: 32px;
+            border-radius: 9px;
+            color: #94a3b8;
+            cursor: pointer;
+            transition: background .2s, color .2s;
+        }
+
+            .hm-seg button.on {
+                background: var(--hm-primary);
+                color: #fff;
+            }
+
+    /* ===== [B] MODULE CARDS (small boxes) ===== */
+    .hm-modules {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 10px;
+    }
+
+    .hm-mod {
+        --c1: #22c55e;
+        --c2: #16a34a; /* colours of the card (set by the script) */
+        position: relative;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 42px 10px 12px;
+        border-radius: 14px; /* <- smaller padding = smaller box */
+        background: var(--hm-card);
+        border: 1.5px solid var(--hm-border);
+        overflow: hidden;
+        outline: none;
+        transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+        animation: hmRise .5s ease both;
+    }
+
+        .hm-mod::before { /* soft colour glow in the corner */
+            content: "";
+            position: absolute;
+            width: 110px;
+            height: 110px;
+            right: -40px;
+            top: -50px;
+            border-radius: 50%;
+            background: radial-gradient(circle, var(--c1) 0%, transparent 68%);
+            opacity: .16;
+            transition: transform .4s ease, opacity .3s;
+        }
+
+        .hm-mod:hover, .hm-mod:focus-visible {
+            transform: translateY(-3px);
+            border-color: var(--c2);
+            box-shadow: 0 12px 22px -14px var(--c2);
+        }
+
+            .hm-mod:hover::before, .hm-mod:focus-visible::before {
+                transform: scale(1.6);
+                opacity: .26;
+            }
+
+        .hm-mod .ico {
+            position: relative;
+            flex: none;
+            width: 40px;
+            height: 40px;
+            border-radius: 12px;
+            display: grid;
+            place-items: center;
+            font-size: 1.1rem;
+            color: #fff;
+            background: linear-gradient(145deg, var(--c1), var(--c2));
+            box-shadow: 0 8px 14px -8px var(--c2);
+            transition: transform .25s ease;
+        }
+
+        .hm-mod:hover .ico {
+            transform: scale(1.08) rotate(-6deg);
+        }
+
+        .hm-mod .name {
+            position: relative;
+            flex: 1;
+            min-width: 0;
+            font-size: .88rem;
+            font-weight: 600;
+            line-height: 1.25;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .hm-mod .pin {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 2;
+            width: 28px;
+            height: 28px;
+            border: 0;
+            border-radius: 50%;
+            cursor: pointer;
+            background: transparent;
+            color: #cbd5e1;
+            display: grid;
+            place-items: center;
+            font-size: .82rem;
+            transition: color .2s, transform .2s;
+        }
+
+            .hm-mod .pin:hover {
+                color: #f59e0b;
+                transform: translateY(-50%) scale(1.15);
+            }
+
+        .hm-mod.pinned .pin {
+            color: #f59e0b;
+        }
+
+        .hm-mod.active {
+            border-color: var(--c2);
+            box-shadow: 0 0 0 3px var(--c1);
+        }
+        /* the module you are in now */
+        .hm-mod.loading {
+            pointer-events: none;
+            opacity: .7;
+        }
+
+            .hm-mod.loading .ico i {
+                animation: hmSpin .8s linear infinite;
+            }
+
+        .hm-mod.hidden {
+            display: none;
+        }
+
+    .hm-nomod {
+        grid-column: 1 / -1;
+        padding: 24px;
+        text-align: center;
+        color: var(--hm-muted);
+        background: #fff;
+        border-radius: 14px;
+        border: 1px dashed #cbd5e1;
+    }
+    /* list view */
+    .hm-modules.list {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+
+    /* ===== [C] QUICK LINKS (small cards) ===== */
+    .hm-quick {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 10px;
+        margin-top: 20px;
+    }
+
+    .hm-q {
+        --qc: #4f46e5; /* card colour (comes from the "c" value) */
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        border-radius: 14px;
+        background: var(--hm-card);
+        border: 1.5px solid var(--hm-border);
+        text-decoration: none;
+        color: inherit;
+        transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+        animation: hmRise .5s ease both;
+    }
+
+        .hm-q:hover, .hm-q:focus-visible {
+            transform: translateY(-3px);
+            border-color: var(--qc);
+            box-shadow: 0 10px 20px -12px var(--qc);
+            outline: none;
+        }
+
+        .hm-q .qico {
+            width: 36px;
+            height: 36px;
+            border-radius: 11px;
+            display: grid;
+            place-items: center;
+            flex: none;
+            font-size: .95rem;
+            background: color-mix(in srgb, var(--qc) 14%, white);
+            color: var(--qc);
+            transition: background .2s, color .2s, transform .2s;
+        }
+
+        .hm-q:hover .qico {
+            background: var(--qc);
+            color: #fff;
+            transform: rotate(-8deg);
+        }
+
+        .hm-q .t1 {
+            font-size: .68rem;
+            font-weight: 600;
+            color: var(--hm-muted);
+            line-height: 1.1;
+        }
+
+        .hm-q .t2 {
+            font-size: .86rem;
+            font-weight: 700;
+            line-height: 1.25;
+        }
+
+        .hm-q .go {
+            margin-left: auto;
+            font-size: .7rem;
+            color: #cbd5e1;
+            transition: transform .2s, color .2s;
+        }
+
+        .hm-q:hover .go {
+            transform: translateX(3px);
+            color: var(--qc);
+        }
+
+    /* ===== bottom boxes ===== */
+    .hm-bottom {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin-top: 24px;
+    }
+
+    .hm-box {
+        background: var(--hm-card);
+        border: 1px solid var(--hm-border);
+        border-radius: 18px;
+        padding: 16px;
+        min-width: 0;
+    }
+
+    .hm-box-head {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
+        font-weight: 600;
+        font-size: .95rem;
+        margin-bottom: 12px;
+    }
+
+        .hm-box-head .hi {
+            width: 30px;
+            height: 30px;
+            border-radius: 9px;
+            display: grid;
+            place-items: center;
+            color: #fff;
+            font-size: .85rem;
+        }
+
+        .hm-box-head .sp {
+            flex: 1;
+        }
+
+    /* ===== [D] NOTICE BOARD (list, click to open) ===== */
+    .hm-nlist {
+        max-height: 400px;
+        overflow-y: auto;
+        display: grid;
+        gap: 10px;
+        padding: 2px 4px 2px 0;
+    }
+
+    .hm-n {
+        --nc: #10b981; /* stripe colour (set by priority) */
+        border: 1px solid var(--hm-border);
+        border-left: 5px solid var(--nc);
+        border-radius: 12px;
+        background: #fff;
+        cursor: pointer;
+        transition: box-shadow .2s, transform .2s;
+        animation: hmRise .4s ease both;
+    }
+
+        .hm-n:hover {
+            box-shadow: 0 8px 18px -12px rgba(30,41,59,.5);
+            transform: translateX(3px);
+        }
+
+        .hm-n .nh {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 12px 14px;
+        }
+
+        .hm-n .nt {
+            font-weight: 600;
+            font-size: .9rem;
+            line-height: 1.3;
+        }
+
+        .hm-n .nm {
+            margin-top: 4px;
+            font-size: .72rem;
+            color: var(--hm-muted);
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 4px 10px;
+        }
+
+    .hm-pri {
+        font-size: .64rem;
+        font-weight: 700;
+        padding: 2px 9px;
+        border-radius: 999px;
+        color: #fff;
+        background: var(--nc);
+    }
+
+    .hm-new {
+        font-size: .62rem;
+        font-weight: 700;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: #fee2e2;
+        color: #b91c1c;
+    }
+
+    .hm-n .chev {
+        margin-left: auto;
+        color: #cbd5e1;
+        font-size: .75rem;
+        transition: transform .25s;
+        flex: none;
+        margin-top: 4px;
+    }
+
+    .hm-n.open .chev {
+        transform: rotate(180deg);
+    }
+
+    .hm-n .nb {
+        max-height: 0;
+        opacity: 0;
+        overflow: hidden;
+        transition: max-height .3s ease, opacity .3s ease;
+        padding: 0 14px 0 33px;
+        font-size: .82rem;
+        line-height: 1.6;
+        color: #475569;
+    }
+
+    .hm-n.open .nb {
+        max-height: 240px;
+        opacity: 1;
+        padding-bottom: 14px;
+    }
+
+    .hm-empty {
+        padding: 40px 10px;
+        text-align: center;
+        color: var(--hm-muted);
+        font-size: .88rem;
+    }
+
+        .hm-empty i {
+            display: block;
+            font-size: 1.8rem;
+            margin-bottom: 8px;
+            color: #cbd5e1;
+        }
+
+    /* ===== [E] UPCOMING EVENTS (timeline, click to open) ===== */
+
+    .hm-tl {
+        max-height: 330px;
+        overflow-y: auto;
+        position: relative;
+        padding: 2px 4px 2px 0;
+    }
+
+    .hm-te {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 12px;
+        animation: hmRise .4s ease both;
+    }
+
+        .hm-te .tm {
+            width: 62px;
+            flex: none;
+            text-align: right;
+            padding-top: 10px;
+        }
+
+            .hm-te .tm b {
+                display: block;
+                font-size: .78rem;
+                white-space: nowrap;
+            }
+
+            .hm-te .tm small {
+                font-size: .64rem;
+                color: var(--hm-muted);
+                font-weight: 600;
+            }
+
+        .hm-te .rail {
+            position: relative;
+            width: 14px;
+            flex: none;
+        }
+
+            .hm-te .rail::before {
+                content: "";
+                position: absolute;
+                left: 6px;
+                top: 0;
+                bottom: -14px;
+                width: 2px;
+                background: var(--hm-border);
+            }
+
+        .hm-te:last-child .rail::before {
+            bottom: 0;
+        }
+
+        .hm-te .rail i {
+            position: absolute;
+            left: 1px;
+            top: 13px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--ec);
+            box-shadow: 0 0 0 4px #fff;
+        }
+
+        .hm-te.today .rail i {
+            animation: hmPulse 1.8s infinite;
+        }
+
+        .hm-te .card {
+            flex: 1;
+            min-width: 0;
+            border-radius: 12px;
+            border: 1px solid var(--hm-border);
+            background: #fff;
+            padding: 10px 12px;
+            cursor: pointer;
+            transition: transform .2s, box-shadow .2s, border-color .2s;
+        }
+
+            .hm-te .card:hover {
+                transform: translateX(3px);
+                border-color: var(--ec);
+                box-shadow: 0 8px 18px -12px var(--ec);
+            }
+
+        .hm-te h6 {
+            margin: 0;
+            font-size: .86rem;
+            font-weight: 600;
+        }
+
+        .hm-te .meta {
+            margin-top: 3px;
+            font-size: .72rem;
+            color: var(--hm-muted);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 3px 10px;
+        }
+
+            .hm-te .meta i {
+                margin-right: 3px;
+            }
+
+        .hm-te .card.open .more {
+            max-height: 150px;
+            opacity: 1;
+            margin-top: 8px;
+        }
+
+        .hm-te .more {
+            max-height: 0;
+            opacity: 0;
+            overflow: hidden;
+            transition: max-height .3s ease, opacity .3s ease;
+            font-size: .78rem;
+            color: #475569;
+        }
+
+            .hm-te .more p {
+                margin: 0;
+            }
+
+    /* ===== [F] TOAST ===== */
+    .hm-toast {
+        position: fixed;
+        left: 50%;
+        bottom: 28px;
+        transform: translate(-50%, 30px);
+        z-index: 2100;
+        background: #0f172a;
+        color: #fff;
+        padding: 12px 18px;
+        border-radius: 12px;
+        font-size: .86rem;
+        opacity: 0;
+        pointer-events: none;
+        transition: all .3s ease;
+        box-shadow: 0 14px 34px rgba(0,0,0,.3);
+    }
+
+        .hm-toast.show {
+            opacity: 1;
+            transform: translate(-50%, 0);
+        }
+
+        .hm-toast.err {
+            background: #b91c1c;
+        }
+
+    /* ===== animations ===== */
+    @@keyframes hmRise {
+        from {
+            opacity: 0;
+            transform: translateY(14px);
+        }
+
+        to {
+            opacity: 1;
+            transform: none;
+        }
+    }
+
+    @@keyframes hmSpin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    @@keyframes hmPulse {
+        0%, 100% {
+            box-shadow: 0 0 0 0 rgba(34,197,94,.5);
+        }
+
+        50% {
+            box-shadow: 0 0 0 7px rgba(34,197,94,0);
+        }
+    }
+
+    /* ===== small screens ===== */
+    @@media (max-width: 1200px) {
+        .hm-quick {
+            grid-template-columns: repeat(3, 1fr);
+        }
+
+        .hm-bottom {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @@media (max-width: 768px) {
+        .hm-page {
+            padding: 14px 12px 40px;
+        }
+
+        .hm-modules {
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+
+        .hm-te .tm {
+            width: 64px;
+        }
+    }
+
+    @@media (max-width: 520px) {
+        .hm-quick {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        .hm-search {
+            width: 100%;
+        }
+
+        .hm-tools {
+            width: 100%;
+        }
+
+            .hm-tools .hm-search {
+                flex: 1;
+            }
+    }
+
+    @@media (prefers-reduced-motion: reduce) {
+        .hm-page * {
+            animation: none !important;
+            transition: none !important;
+        }
+    }
+</style>
+
+<!--begin::App Main-->
+<main class="app-main">
+    <div class="app-content">
+        <div class="hm-page" data-smart-page>
+            @Html.AntiForgeryToken()
+
+           @*  <div class="hm-top">
+                <div class="hm-crumb">
+                    <a href="@Url.Action("Index", "Home")"><i class="fas fa-house"></i> Home</a>
+                    <span>/</span> <b>Modules</b>
+                </div>
+            </div>
+ *@
+            <!-- MODULES -->
+            <div class="hm-sec-head">
+                <div class="hm-sec-title"><i class="fas fa-grip" style="color:#4f46e5"></i> My Modules <span class="hm-chip" id="modCount">0</span></div>
+                <div class="hm-tools">
+                    <div class="hm-search">
+                        <i class="fas fa-magnifying-glass"></i>
+                        <input type="text" id="moduleSearch" placeholder="Search module..." autocomplete="off" />
+                        <kbd>/</kbd>
+                    </div>
+                    <div class="hm-seg" id="viewSeg">
+                        <button type="button" data-view="grid" class="on" title="Cards"><i class="fas fa-table-cells-large"></i></button>
+                        <button type="button" data-view="list" title="List"><i class="fas fa-list"></i></button>
+                    </div>
+                </div>
+            </div>
+            <div class="hm-modules" id="moduleGrid"></div>
+
+            <!-- QUICK LINKS (small cards) - items are in the script: [5] -->
+            <div class="hm-quick" id="quickGrid"></div>
+
+            <!-- NOTICE + EVENTS -->
+            <div class="hm-bottom">
+
+                <!-- NOTICE BOARD -->
+                <div class="hm-box">
+                    <div class="hm-box-head">
+                        <span class="hi" style="background:#14b8a6"><i class="fas fa-bullhorn"></i></span> Notice Board
+                    </div>
+                    <div class="hm-nlist" id="noticeList"></div>
+                </div>
+
+                <!-- UPCOMING EVENTS -->
+                <div class="hm-box">
+                    <div class="hm-box-head">
+                        <span class="hi" style="background:#f59e0b"><i class="fas fa-calendar-days"></i></span> Upcoming Events
+                    </div>
+                    <div class="hm-tl" id="eventList"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+<!--end::App Main-->
+
+<div class="hm-toast" id="hmToast"></div>
+
+@* =========================================================================
+   SCRIPT  (easy to read - every part has a number)
+   [1] settings        [2] DATA you replace later (modules / quick links / notices / events)
+   [3] small helpers   [4] module cards   [5] quick links   [6] notice board   [7] upcoming events
+   ========================================================================= *@
+@section Scripts {
+    <script>
+        (function () {
+            /* [1] ===== SETTINGS - change these ===== */
+            var S = {
+                NEW_DAYS: 3              // a notice is marked NEW for 3 days
+            };
+
+            /* [2] ===== DATA ===== */
+            // Modules come from the database (same as old rptModule: ID, MODULENAME, ICON)
+            var modules = @Html.Raw(modulesJson);
+            var activeId = @Html.Raw(selectedModule);
+
+            var palette = [
+                ['#22c55e', '#16a34a'], ['#06b6d4', '#0891b2'], ['#f59e0b', '#d97706'], ['#8b5cf6', '#7c3aed'],
+                ['#10b981', '#059669'], ['#ec4899', '#db2777'], ['#3b82f6', '#2563eb'], ['#14b8a6', '#0d9488'],
+                ['#f97316', '#ea580c'], ['#6366f1', '#4f46e5'], ['#ef4444', '#dc2626'], ['#84cc16', '#65a30d']
+            ];
+
+            // QUICK LINKS:  t1 = small text, t2 = big text, c = colour, u = link, icon = Font Awesome icon
+            var quick = [
+                { t1: 'Admin Rules',    t2: 'View',   c: '#38bdf8', icon: 'fa-scale-balanced',  u: '#' },
+                { t1: 'Service Ticket', t2: 'Create', c: '#38bdf8', icon: 'fa-ticket',          u: '#' },
+                { t1: 'Holiday',        t2: 'View',   c: '#ec4899', icon: 'fa-umbrella-beach',  u: '#' },
+                { t1: 'Dress Code',     t2: 'View',   c: '#22b8e8', icon: 'fa-shirt',           u: '#' },
+                { t1: 'Admin Rules',    t2: 'View',   c: '#2563eb', icon: 'fa-scale-balanced',  u: '#' },
+                { t1: 'Service Ticket', t2: 'Create', c: '#f5b324', icon: 'fa-ticket',          u: '#' }
+            ];
+
+            // sample dates are "today + N days" so the demo always looks alive.
+            // When you use database data, write real dates like  date: '2026-10-20'
+            function plusDays(n) { var d = new Date(); d.setDate(d.getDate() + n); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+
+            // NOTICES:  title, pri (High / Medium / Low), dept, date (yyyy-mm-dd), text
+            var notices = [
+                { title: 'IOM Policy Update', pri: 'High', dept: 'HR', date: plusDays(-1),
+                  text: 'Please be informed that all IOM and LEAVE Applications must be applied / submitted within 24 hours. These instructions will be effective from the next month.' },
+                { title: 'Gatepass Approval Rule', pri: 'Medium', dept: 'Admin', date: plusDays(-4),
+                  text: 'All material gatepass must be approved by the department head before dispatch from the factory gate.' },
+                { title: 'Office Holiday Notice', pri: 'Low', dept: 'HR', date: plusDays(-9),
+                  text: 'Office will remain closed on the upcoming public holiday. Normal operation resumes the next working day.' },
+                { title: 'New Dress Code', pri: 'Medium', dept: 'HR', date: plusDays(-12),
+                  text: 'Formal dress is required Sunday to Thursday. Casual dress is allowed on Friday only.' }
+            ];
+
+            // EVENTS:  date = yyyy-mm-dd, time = HH:mm (24 hour), n = number of people, c = colour
+            var events = [
+                { date: plusDays(0),  time: '15:00', t: 'Quarterly Town Hall',          loc: 'Auditorium, Level 4', n: 320, c: '#0d9488', info: 'Company results and open question time with management.' },
+                { date: plusDays(1),  time: '11:00', t: 'Fire Safety Drill',            loc: 'Factory Floor A',     n: 240, c: '#f59e0b', info: 'Everyone must go to the assembly point when the alarm rings.' },
+                { date: plusDays(1),  time: '16:30', t: 'Admin Team Meeting',           loc: 'Meeting Room 2',      n: 12,  c: '#7c3aed', info: 'Weekly review of tickets and gatepass.' },
+                { date: plusDays(4),  time: '10:00', t: 'Blood Donation Drive',         loc: 'Reception Lobby',     n: 120, c: '#ef4444', info: 'Please drink enough water and have breakfast before you donate.' },
+                { date: plusDays(9),  time: '07:30', t: 'Inter-Department Sports Day',  loc: 'Company Ground',      n: 400, c: '#7c3aed', info: 'Register your department team with the HR desk.' },
+                { date: plusDays(16), time: '17:00', t: 'Long Service Award Ceremony',  loc: 'Rooftop Garden',      n: 200, c: '#b45309', info: 'Tea and snacks will be served after the ceremony.' }
+            ];
+
+            /* [3] ===== SMALL HELPERS ===== */
+            function $(id) { return document.getElementById(id); }
+            function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+            function iconClass(ic) { return 'fa ' + String(ic || 'fa-folder').replace(/^fa\s+/, ''); }
+            function p2(n) { return String(n).padStart(2, '0'); }
+            function store(key, val) {                       // small helper: remember things in this browser
+                try { if (val === undefined) return JSON.parse(localStorage.getItem(key)); localStorage.setItem(key, JSON.stringify(val)); } catch (e) { }
+                return null;
+            }
+            var toastTimer;
+            function toast(msg, err) {
+                var t = $('hmToast'); t.textContent = msg; t.className = 'hm-toast show' + (err ? ' err' : '');
+                clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.className = 'hm-toast'; }, 3500);
+            }
+
+            /* [4] ===== MODULE CARDS ===== */
+            var grid = $('moduleGrid'), pins = store('hmPins') || [], view = store('hmView') || 'grid';
+            modules.forEach(function (m, i) { m._i = i; });
+
+            function drawModules() {
+                grid.innerHTML = '';
+                grid.classList.toggle('list', view === 'list');
+                document.querySelectorAll('#viewSeg button').forEach(function (b) { b.classList.toggle('on', b.dataset.view === view); });
+                $('modCount').textContent = modules.length;
+
+                if (!modules.length) {
+                    grid.innerHTML = '<div class="hm-nomod"><i class="fas fa-folder-open"></i> No module assigned to you.</div>';
+                    return;
+                }
+                // pinned modules first, the rest keep the database order
+                var sorted = modules.slice().sort(function (a, b) {
+                    var pa = pins.indexOf(a.ID) !== -1 ? 0 : 1, pb = pins.indexOf(b.ID) !== -1 ? 0 : 1;
+                    return pa - pb || a._i - b._i;
+                });
+                sorted.forEach(function (m, idx) {
+                    var col = palette[m._i % palette.length], pinned = pins.indexOf(m.ID) !== -1;
+                    var d = document.createElement('div');
+                    d.className = 'hm-mod' + (m.ID === activeId ? ' active' : '') + (pinned ? ' pinned' : '');
+                    d.tabIndex = 0; d.setAttribute('role', 'link');
+                    d.dataset.id = m.ID; d.dataset.name = String(m.MODULENAME || '').toLowerCase();
+                    d.style.setProperty('--c1', col[0]); d.style.setProperty('--c2', col[1]);
+                    d.style.animationDelay = Math.min(idx * 35, 500) + 'ms';
+                    d.innerHTML =
+                        '<div class="ico"><i class="' + esc(iconClass(m.ICON)) + '"></i></div>' +
+                        '<div class="name">' + esc(m.MODULENAME) + '</div>' +
+                        '<button type="button" class="pin" title="' + (pinned ? 'Unpin' : 'Pin to top') + '"><i class="' + (pinned ? 'fas' : 'far') + ' fa-star"></i></button>';
+                    function go() { d.classList.add('loading'); window.location.href = '@Url.Action("Module", "Home")/' + m.ID; }
+                    d.addEventListener('click', go);
+                    d.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+                    d.querySelector('.pin').addEventListener('click', function (e) {
+                        e.stopPropagation();
+                        var at = pins.indexOf(m.ID);
+                        if (at === -1) { pins.push(m.ID); toast('Pinned: ' + m.MODULENAME); } else { pins.splice(at, 1); toast('Unpinned: ' + m.MODULENAME); }
+                        store('hmPins', pins); drawModules(); filterModules();
+                    });
+                    grid.appendChild(d);
+                });
+            }
+            function filterModules() {
+                var q = $('moduleSearch').value.trim().toLowerCase(), shown = 0;
+                grid.querySelectorAll('.hm-mod').forEach(function (b) {
+                    var hide = q && b.dataset.name.indexOf(q) === -1;
+                    b.classList.toggle('hidden', !!hide); if (!hide) shown++;
+                });
+                var old = grid.querySelector('.hm-nomatch'); if (old) old.remove();
+                if (q && !shown && modules.length) {
+                    var n = document.createElement('div'); n.className = 'hm-nomod hm-nomatch';
+                    n.innerHTML = '<i class="fas fa-magnifying-glass"></i> No module matched "' + esc(q) + '".'; grid.appendChild(n);
+                }
+            }
+            $('moduleSearch').addEventListener('input', filterModules);
+            document.addEventListener('keydown', function (e) {           // press "/" to jump to the search box
+                if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) { e.preventDefault(); $('moduleSearch').focus(); }
+            });
+            document.querySelectorAll('#viewSeg button').forEach(function (b) {
+                b.addEventListener('click', function () { view = b.dataset.view; store('hmView', view); drawModules(); filterModules(); });
+            });
+            drawModules();
+
+            /* [5] ===== QUICK LINKS ===== */
+            // one small card for every item of the "quick" list above
+            $('quickGrid').innerHTML = quick.map(function (q, i) {
+                return '<a class="hm-q" href="' + esc(q.u || '#') + '" style="--qc:' + q.c + ';animation-delay:' + (i * 50) + 'ms">' +
+                         '<span class="qico"><i class="fas ' + esc(q.icon || 'fa-circle') + '"></i></span>' +
+                         '<span><div class="t1">' + esc(q.t1) + '</div><div class="t2">' + esc(q.t2) + '</div></span>' +
+                         '<i class="fas fa-arrow-right go"></i>' +
+                       '</a>';
+            }).join('');
+
+            /* [6] ===== NOTICE BOARD ===== */
+            var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            var priColor = { High: '#ef4444', Medium: '#f59e0b', Low: '#10b981' };      // stripe colour of each priority
+
+            function toDate(s) { var a = s.split('-'); return new Date(+a[0], +a[1] - 1, +a[2]); }
+            function niceDate(s) { var d = toDate(s); return p2(d.getDate()) + ' ' + MON[d.getMonth()] + ' ' + d.getFullYear(); }
+            function daysFromToday(s) { var t = new Date(); t.setHours(0, 0, 0, 0); return Math.round((toDate(s) - t) / 864e5); }
+
+            // one card for every notice
+            $('noticeList').innerHTML = notices.length ? notices.map(function (n, i) {
+                var isNew = -daysFromToday(n.date) <= S.NEW_DAYS;
+                return '<div class="hm-n" style="--nc:' + priColor[n.pri] + ';animation-delay:' + (i * 50) + 'ms">' +
+                         '<div class="nh"><div>' +
+                           '<div class="nt">' + esc(n.title) + '</div>' +
+                           '<div class="nm"><span class="hm-pri">' + esc(n.pri) + '</span>' +
+                           '<span><i class="fas fa-users"></i> ' + esc(n.dept) + '</span>' +
+                           '<span><i class="far fa-clock"></i> ' + niceDate(n.date) + '</span>' + (isNew ? '<span class="hm-new">NEW</span>' : '') + '</div>' +
+                         '</div><i class="fas fa-chevron-down chev"></i></div>' +
+                         '<div class="nb">' + esc(n.text) + '</div>' +
+                       '</div>';
+            }).join('') : '<div class="hm-empty"><i class="far fa-bell-slash"></i>No notice.</div>';
+
+            // click a notice = open / close its text
+            $('noticeList').addEventListener('click', function (e) {
+                var box = e.target.closest('.hm-n'); if (!box) return;
+                var wasOpen = box.classList.contains('open');
+                this.querySelectorAll('.hm-n.open').forEach(function (x) { x.classList.remove('open'); });
+                box.classList.toggle('open', !wasOpen);
+            });
+
+            /* [7] ===== UPCOMING EVENTS ===== */
+            function clock(t) { var a = t.split(':'), h = +a[0]; return p2(h % 12 || 12) + ':' + a[1] + ' ' + (h >= 12 ? 'PM' : 'AM'); }
+            function whenText(days) { return days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : 'In ' + days + ' days'; }
+
+            // only today and the coming days, nearest first
+            var coming = events.filter(function (e) { return daysFromToday(e.date) >= 0; })
+                               .sort(function (x, y) { return (x.date + x.time).localeCompare(y.date + y.time); });
+
+            $('eventList').innerHTML = coming.length ? coming.map(function (e, i) {
+                var days = daysFromToday(e.date);
+                return '<div class="hm-te' + (days === 0 ? ' today' : '') + '" style="--ec:' + e.c + ';animation-delay:' + (i * 50) + 'ms">' +
+                         '<div class="tm"><b>' + clock(e.time) + '</b><small>' + whenText(days) + '</small></div>' +
+                         '<div class="rail"><i></i></div>' +
+                         '<div class="card"><h6>' + esc(e.t) + '</h6>' +
+                           '<div class="meta"><span><i class="far fa-calendar"></i>' + niceDate(e.date) + '</span>' +
+                           '<span><i class="fas fa-location-dot"></i>' + esc(e.loc) + '</span><span><i class="fas fa-user-group"></i>' + e.n + '</span></div>' +
+                           '<div class="more"><p>' + esc(e.info || '') + '</p></div>' +
+                         '</div></div>';
+            }).join('') : '<div class="hm-empty"><i class="far fa-calendar-xmark"></i>No upcoming event.</div>';
+
+            // click an event = open / close its details
+            $('eventList').addEventListener('click', function (e) {
+                var card = e.target.closest('.card'); if (!card) return;
+                var wasOpen = card.classList.contains('open');
+                this.querySelectorAll('.card.open').forEach(function (x) { x.classList.remove('open'); });
+                card.classList.toggle('open', !wasOpen);
+            });
+        })();
+    </script>
+}

@@ -1,0 +1,333 @@
+﻿@* Views/Meeting/MeetingSchedule.cshtml  (old: Pages/Meeting/Default.aspx - the "Schedule" part only)
+   REPORT PAGE - standard report pattern: filter -> Excel / Print -> result table  (app-standard.css / app-standard.js).
+   "My Meeting" and "My Task" boxes of the old page are not converted. *@
+@model AlphaCare.Models.MeetingScheduleViewModel
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = "Meeting Schedule";
+
+    var today = DateTime.Today;
+    var now = DateTime.Now;
+
+    (string Key, string Label) DayInfo(DateTime? start)
+    {
+        if (start == null) return ("past", "-");
+        int diff = (start.Value.Date - today).Days;
+        if (diff == 0) return ("today", "Today");
+        if (diff == 1) return ("future", "Tomorrow");
+        if (diff > 1) return ("future", $"In {diff} days");
+        if (diff == -1) return ("past", "Yesterday");
+        return ("past", $"{-diff} days ago");
+    }
+}
+
+<div class="sd-page" data-smart-page>
+    <div class="card shadow-sm border-0">
+
+        <div class="sd-head">
+            <h5 class="mb-0"><i class="fas fa-calendar-days me-2"></i>Meeting Schedule</h5>
+            <span class="sd-date"><i class="far fa-calendar me-1"></i>@today.ToString("dddd, dd MMMM yyyy")</span>
+        </div>
+
+        <div class="card-body">
+
+            @* 1. FILTER *@
+            <form method="get" class="sd-filter" id="schedForm">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label">Location</label>
+                        <select class="form-select" name="centerId" id="selCenter">
+                            <option value="0">All locations</option>
+                            @foreach (var c in Model.Centers)
+                            {
+                                <option value="@c.ID" selected="@(c.ID == Model.CenterId)">@c.CENTERNAME</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Room</label>
+                        <select class="form-select" name="roomId" id="selRoom">
+                            <option value="0">All rooms</option>
+                            @foreach (var r in Model.Rooms)
+                            {
+                                <option value="@r.ID" selected="@(r.ID == Model.RoomId)">@r.DisplayName</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">From date</label>
+                        <input type="date" class="form-control" name="from" value="@Model.From.ToString("yyyy-MM-dd")" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">To date</label>
+                        <input type="date" class="form-control" name="to" value="@Model.To.ToString("yyyy-MM-dd")" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Status</label>
+                        <select class="form-select" name="status" id="selStatus">
+                            <option value="1" selected="@(Model.Status == 1)">Approved</option>
+                            <option value="0" selected="@(Model.Status == 0)">Waiting</option>
+                            <option value="2" selected="@(Model.Status == 2)">Rejected</option>
+                            <option value="3" selected="@(Model.Status == 3)">Cancelled</option>
+                            <option value="-1" selected="@(Model.Status == -1)">All status</option>
+                        </select>
+                    </div>
+                    <div class="col-12 d-flex gap-2">
+                        <button type="submit" class="btn btn-primary"><i class="fas fa-magnifying-glass me-1"></i> Search</button>
+                        <a href="@Url.Action("MeetingSchedule", "Meeting")" class="btn btn-secondary"><i class="fas fa-rotate-left me-1"></i> Reset</a>
+                    </div>
+                </div>
+            </form>
+
+            @* 2. SEARCH + EXCEL + PRINT in ONE row (saves space) *@
+            <div class="sd-tools">
+                <div class="input-group grow">
+                    <span class="input-group-text bg-white"><i class="fas fa-magnifying-glass text-muted"></i></span>
+                    <input type="text" class="form-control" id="sdSearch" placeholder="Search title, room, called by, requester..." autocomplete="off" />
+                </div>
+                <button type="button" class="btn btn-outline-success" onclick="SD.exportExcel('#reportTable','Meeting Schedule')"><i class="fas fa-file-excel me-1"></i> Excel</button>
+                <button type="button" class="btn btn-outline-secondary" onclick="SD.print('#reportTable','Meeting Schedule')"><i class="fas fa-print me-1"></i> Print</button>
+                <button type="button" class="sd-link" id="sdClear" style="display:none"><i class="fas fa-xmark me-1"></i>Clear filters</button>
+                <button type="button" class="sd-link" id="sdResetSort" style="display:none"><i class="fas fa-arrow-rotate-left me-1"></i>Default order</button>
+            </div>
+
+            <div class="sd-pane active" id="pane-report">
+                <div class="sd-wrap table-responsive">
+                    <table class="sd-table" id="reportTable">
+                        <thead>
+                            <tr>
+                                <th class="sortable" data-sort="start">Date &amp; Time<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable" data-sort="title">Meeting Title<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable" data-sort="room">Meeting Room<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable" data-sort="called">Meeting Call By<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable" data-sort="by">Request By<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable" data-sort="admin">Room Admin<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable" data-sort="status">Status<i class="fas fa-sort arr"></i></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{
+                                int idx = 0;
+                            }
+                            @foreach (var r in Model.Rows)
+                            {
+                                var di = DayInfo(r.STARTTIME);
+                                bool live = r.ISAPPROVED == 1 && r.STARTTIME <= now && r.ENDTIME >= now;
+                                string statusText = r.ISAPPROVED switch { 1 => "Approved", 2 => "Rejected", 3 => "Cancelled", _ => "Waiting" };
+                                string statusColor = r.ISAPPROVED switch { 1 => "#16a34a", 2 => "#dc2626", 3 => "#64748b", _ => "#d97706" };
+                                string search = $"{r.MEETINGTITLE} {r.RoomDisplay} {r.CENTERNAME} {r.MEETINGCALLEDBY} {r.CREATORNAME} {r.ADMINNAME} {statusText}".ToLower();
+                                string rowCls = di.Key == "today" ? "is-today" : di.Key == "past" ? "is-past" : "";
+                                <tr class="@rowCls" data-search="@search" data-day="@di.Key" data-i="@(idx++)"
+                                    data-k-start="@(r.STARTTIME?.Ticks ?? 0)" data-k-title="@((r.MEETINGTITLE ?? "").ToLower())"
+                                    data-k-room="@r.RoomDisplay.ToLower()" data-k-called="@((r.MEETINGCALLEDBY ?? "").ToLower())"
+                                    data-k-by="@((r.CREATORNAME ?? "").ToLower())" data-k-admin="@((r.ADMINNAME ?? "").ToLower())"
+                                    data-k-status="@statusText.ToLower()">
+
+                                    <td class="sd-date text-nowrap" data-label="Date &amp; Time">
+                                        <div class="sd-cell">
+                                            <b>@(r.STARTTIME?.ToString("dd MMM yyyy") ?? "-")</b>
+                                            <small>@(r.STARTTIME?.ToString("hh:mm tt")) @(r.ENDTIME.HasValue ? "- " + r.ENDTIME.Value.ToString("hh:mm tt") : "")</small>
+                                            <div class="mt-1 no-export">
+                                                <span class="sd-badge @di.Key">@di.Label</span>
+                                                @if (live)
+                                                {
+                                                    <span class="sd-badge sd-live"><i class="fas fa-circle"></i> Live now</span>
+                                                }
+                                            </div>
+                                        </div>
+                                    </td>
+
+                                    <td data-label="Meeting Title"><div class="sd-cell"><a class="sd-title" title="View Details" href="@Url.Action("ViewMeeting", "Meeting", new { id = r.ID })">@r.MEETINGTITLE</a></div></td>
+
+                                    <td data-label="Meeting Room"><div class="sd-cell">@r.RoomDisplay</div></td>
+
+                                    <td data-label="Meeting Call By"><div class="sd-cell">@(string.IsNullOrWhiteSpace(r.MEETINGCALLEDBY) ? "-" : r.MEETINGCALLEDBY)</div></td>
+
+                                    <td data-label="Request By"><div class="sd-cell">@(string.IsNullOrWhiteSpace(r.CREATORNAME) ? "-" : r.CREATORNAME)</div></td>
+
+                                    <td data-label="Room Admin">
+                                        <div class="sd-cell">
+                                            @(string.IsNullOrWhiteSpace(r.ADMINNAME) ? "-" : r.ADMINNAME)
+                                            @if (!string.IsNullOrWhiteSpace(r.ADMINMOBILE))
+                                            {
+                                                <span class="sd-sub">@r.ADMINMOBILE</span>
+                                            }
+                                        </div>
+                                    </td>
+
+                                    <td data-label="Status"><div class="sd-cell"><b style="color:@statusColor">@statusText</b></div></td>
+                                </tr>
+                            }
+                            @if (Model.Rows.Count > 0)
+                            {
+                                <tr class="sd-total">
+                                    <td data-label="Total"><div class="sd-cell">Total meetings: @Model.Rows.Count</div></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                    <td></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="sd-empty" data-empty="all" style="@(Model.Rows.Count == 0 ? "" : "display:none")">
+                    <i class="far fa-calendar-check"></i> No meeting found for this filter.
+                </div>
+                <div class="sd-empty" data-empty="filter" style="display:none">
+                    <i class="fas fa-filter-circle-xmark"></i> No meeting matched your search.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" />
+<style>
+    /* SEARCHABLE DROPDOWNS - same look as CreateMeeting.cshtml (classic Select2) */
+    /* Select2 classic look (like the sample image): bordered box, search field, blue highlighted row */
+    .select2-container {
+        width: 100% !important;
+    }
+
+    .select2-container--default .select2-selection--single {
+        height: 38px;
+        border: 1px solid #aaa;
+        border-radius: 4px;
+        background: #fff;
+    }
+
+        .select2-container--default .select2-selection--single .select2-selection__rendered {
+            line-height: 36px;
+            padding-left: 12px;
+            padding-right: 28px;
+            color: #444;
+        }
+
+        .select2-container--default .select2-selection--single .select2-selection__placeholder {
+            color: #777;
+        }
+
+        .select2-container--default .select2-selection--single .select2-selection__arrow {
+            height: 36px;
+            right: 4px;
+        }
+
+    .select2-container--default.select2-container--focus .select2-selection--single,
+    .select2-container--default.select2-container--open .select2-selection--single {
+        border-color: #5897fb;
+        box-shadow: 0 0 0 3px rgba(88,151,251,.2);
+    }
+
+    .select2-container--default.select2-container--disabled .select2-selection--single {
+        background: #eee;
+        cursor: not-allowed;
+    }
+
+    .select2-dropdown {
+        border: 1px solid #aaa;
+        border-radius: 4px;
+        box-shadow: 0 6px 16px rgba(0,0,0,.15);
+    }
+
+    .select2-container--default .select2-search--dropdown {
+        padding: 4px;
+    }
+
+        .select2-container--default .select2-search--dropdown .select2-search__field {
+            border: 1px solid #aaa;
+            border-radius: 3px;
+            height: 32px;
+            padding: 0 8px;
+            outline: none;
+        }
+
+    .select2-container--default .select2-results > .select2-results__options {
+        max-height: 260px;
+    }
+
+    .select2-container--default .select2-results__option {
+        padding: 7px 10px;
+        font-size: .9rem;
+    }
+
+    .select2-container--default .select2-results__option--highlighted.select2-results__option--selectable {
+        background-color: #5897fb;
+        color: #fff;
+    }
+
+    .select2-container--default .select2-results__option--selected {
+        background-color: #e9eefb;
+    }
+</style>
+
+@section Scripts {
+    <script>
+        (function () {
+            SD.initList();                                   // search + sort of the result
+
+            /* ===== load jQuery + Select2 if the layout has none (same helper as CreateMeeting.cshtml) ===== */
+            function loadScript(src, done) {
+                var s = document.createElement('script');
+                s.src = src; s.onload = done;
+                s.onerror = function () { console.error('Could not load ' + src); done(); };
+                document.head.appendChild(s);
+            }
+            function withSelect2(done) {
+                if (window.jQuery && jQuery.fn && jQuery.fn.select2) return done();
+                var loadS2 = function () { loadScript('https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js', done); };
+                if (window.jQuery) loadS2();
+                else loadScript('https://code.jquery.com/jquery-3.7.1.min.js', loadS2);
+            }
+            // start when the whole page (all layout scripts) is ready, so jQuery of the layout is surely there
+            function boot() { withSelect2(start); }
+            if (document.readyState === 'complete') boot(); else window.addEventListener('load', boot);
+
+            function start() {
+                /* ===== SEARCHABLE DROP DOWNS (Location, Room, Status) ===== */
+                var $center = jQuery('#selCenter'), $room = jQuery('#selRoom'), $status = jQuery('#selStatus');
+                if (!jQuery.fn.select2) { console.error('Select2 could not be loaded - normal dropdowns are used.'); return; }
+
+                [$center, $room, $status].forEach(function ($s) {
+                    try {
+                        if ($s.hasClass('select2-hidden-accessible')) $s.select2('destroy');     // page opened again by the smart menu
+                        $s.select2({
+                            theme: 'default',
+                            width: '100%',
+                            placeholder: $s.find('option:first').text(),
+                            language: { noResults: function () { return 'No result found'; } }
+                        });
+                    } catch (e) {
+                        console.error('Select2 failed for #' + $s.attr('id'), e);                 // the normal dropdown stays usable
+                        try { $s.select2('destroy'); } catch (x) { }
+                    }
+                });
+
+                // select2 4.1 does not always focus the search box - do it ourselves
+                jQuery(document).on('select2:open', function () {
+                    var f = document.querySelector('.select2-container--open .select2-search__field');
+                    if (f) f.focus();
+                });
+
+                /* ===== LOCATION -> ROOM (cascading, existing action Meeting/GetRooms) ===== */
+                $center.on('change', function () {
+                    $room.empty().append(new Option('All rooms', '0', false, false)).trigger('change');
+                    var id = parseInt($center.val(), 10) || 0;
+                    if (id <= 0) return;
+                    $room.prop('disabled', true);
+                    fetch('@Url.Action("GetRooms", "Meeting")?businessCenterId=' + encodeURIComponent(id), { credentials: 'same-origin' })
+                        .then(function (r) { return r.json(); })
+                        .then(function (list) {
+                            list.forEach(function (x) { $room.append(new Option(x.name, x.id, false, false)); });
+                            $room.trigger('change');
+                        })
+                        .catch(function () { SD.toast('Could not load the rooms.', true); })
+                        .finally(function () { $room.prop('disabled', false); });
+                });
+            }
+        })();
+    </script>
+}

@@ -1,0 +1,82 @@
+﻿@* Views/Meeting/ViewMeeting.cshtml  (read-only details; old: View.aspx - foods / participants will be added when that code is converted) *@
+@model AlphaCare.Models.CreateMeetingViewModel
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = "Meeting Details";
+
+    var m = Model.Meeting;
+    bool canEdit = ViewBag.CanEdit is bool b && b;
+    string fmt(DateTime? d) => d.HasValue ? d.Value.ToString("dd MMM yyyy, hh:mm tt") : "-";
+}
+
+<style>
+    .mv-tile {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 10px 14px;
+        height: 100%;
+    }
+
+        .mv-tile small {
+            display: block;
+            font-size: .7rem;
+            font-weight: 600;
+            letter-spacing: .5px;
+            text-transform: uppercase;
+            color: #64748b;
+        }
+
+        .mv-tile span {
+            display: block;
+            margin-top: 3px;
+            font-weight: 500;
+        }
+
+    .mv-agenda {
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 16px;
+        background: #fff;
+    }
+</style>
+
+<div class="container-fluid py-3">
+    <div class="card shadow-sm border-0">
+
+        <div class="card-header bg-primary text-white d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <h5 class="mb-0"><i class="fas fa-calendar-check me-2"></i>Meeting Details</h5>
+            <div class="d-flex gap-2">
+                @if (canEdit)
+                {
+                    <a class="btn btn-light btn-sm fw-semibold" href="@Url.Action("CreateMeeting", "Meeting", new { id = m.ID })">
+                        <i class="fas fa-pen-to-square me-1"></i> Edit
+                    </a>
+                }
+                <a class="btn btn-outline-light btn-sm fw-semibold" href="@Url.Action("MeetingList", "Meeting")">
+                    <i class="fas fa-arrow-left me-1"></i> Back to List
+                </a>
+            </div>
+        </div>
+
+        <div class="card-body">
+            <h4 class="mb-3">@m.MEETINGTITLE</h4>
+
+            <div class="row g-3 mb-4">
+                <div class="col-md-3 col-6"><div class="mv-tile"><small>Location</small><span>@(m.CENTERNAME ?? "-")</span></div></div>
+                <div class="col-md-3 col-6"><div class="mv-tile"><small>Room</small><span>@(m.ROOMTITLE ?? "-")</span></div></div>
+                <div class="col-md-3 col-6"><div class="mv-tile"><small>Start Time</small><span>@fmt(m.STARTTIME)</span></div></div>
+                <div class="col-md-3 col-6"><div class="mv-tile"><small>End Time</small><span>@fmt(m.ENDTIME)</span></div></div>
+                <div class="col-md-3 col-6"><div class="mv-tile"><small>Meeting Type</small><span>@(m.MTYPENAME ?? "-")</span></div></div>
+                @* <div class="col-md-3 col-6"><div class="mv-tile"><small>Meeting Called By</small><span>@(string.IsNullOrWhiteSpace(Model.ChairName) ? "-" : Model.ChairName)</span></div></div>
+                <div class="col-md-3 col-6"><div class="mv-tile"><small>Chairperson Mobile</small><span>@(string.IsNullOrWhiteSpace(Model.ChairMobile) ? "-" : Model.ChairMobile)</span></div></div> *@
+                <div class="col-md-3 col-6"><div class="mv-tile"><small>Meeting Called By</small><span>@(m.MEETINGCALLEDBY ?? "-")</span></div></div>
+                <div class="col-md-3 col-6"><div class="mv-tile"><small>Participant</small><span>@(m.ACTUALPERTICIPANT)</span></div></div>
+            </div>
+
+            <h6 class="fw-semibold mb-2"><i class="fas fa-align-left me-1 text-primary"></i> Agenda</h6>
+            <div class="mv-agenda">@Html.Raw(ViewBag.AgendaHtml as string)</div>
+        </div>
+    </div>
+</div>

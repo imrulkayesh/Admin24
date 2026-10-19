@@ -1,0 +1,358 @@
+﻿@* Views/Meeting/RoomUsage.cshtml  - REPORT: Room Wise Total Uses Time
+   Standard report pattern: filter -> search + Excel + Print (one row) -> result table with a Total row.
+   Time of a room = sum of (End time - Start time) of its meetings in the selected dates and status. *@
+@model AlphaCare.Models.RoomUsageViewModel
+@using AlphaCare.Models
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = "Room Wise Total Uses Time";
+
+    double totalMin = Model.Rows.Sum(r => r.TOTALMINUTES);
+    int totalMeet = Model.Rows.Sum(r => r.TOTALMEETINGS);
+    double maxMin = Model.Rows.Count == 0 ? 0 : Model.Rows.Max(r => r.TOTALMINUTES);
+    string period = Model.From.ToString("dd MMM yyyy") + " - " + Model.To.ToString("dd MMM yyyy");
+    string printTitle = "Room Wise Total Uses Time (" + period + ")";
+    string statusName = Model.Status switch { 1 => "Approved", 0 => "Waiting", 2 => "Rejected", 3 => "Cancelled", _ => "All status" };
+}
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" />
+<style>
+    /* SEARCHABLE DROPDOWNS - same look as CreateMeeting.cshtml (classic Select2) */
+    /* Select2 classic look (like the sample image): bordered box, search field, blue highlighted row */
+    .select2-container {
+        width: 100% !important;
+    }
+
+    .select2-container--default .select2-selection--single {
+        height: 38px;
+        border: 1px solid #aaa;
+        border-radius: 4px;
+        background: #fff;
+    }
+
+        .select2-container--default .select2-selection--single .select2-selection__rendered {
+            line-height: 36px;
+            padding-left: 12px;
+            padding-right: 28px;
+            color: #444;
+        }
+
+        .select2-container--default .select2-selection--single .select2-selection__placeholder {
+            color: #777;
+        }
+
+        .select2-container--default .select2-selection--single .select2-selection__arrow {
+            height: 36px;
+            right: 4px;
+        }
+
+    .select2-container--default.select2-container--focus .select2-selection--single,
+    .select2-container--default.select2-container--open .select2-selection--single {
+        border-color: #5897fb;
+        box-shadow: 0 0 0 3px rgba(88,151,251,.2);
+    }
+
+    .select2-container--default.select2-container--disabled .select2-selection--single {
+        background: #eee;
+        cursor: not-allowed;
+    }
+
+    .select2-dropdown {
+        border: 1px solid #aaa;
+        border-radius: 4px;
+        box-shadow: 0 6px 16px rgba(0,0,0,.15);
+    }
+
+    .select2-container--default .select2-search--dropdown {
+        padding: 4px;
+    }
+
+        .select2-container--default .select2-search--dropdown .select2-search__field {
+            border: 1px solid #aaa;
+            border-radius: 3px;
+            height: 32px;
+            padding: 0 8px;
+            outline: none;
+        }
+
+    .select2-container--default .select2-results > .select2-results__options {
+        max-height: 260px;
+    }
+
+    .select2-container--default .select2-results__option {
+        padding: 7px 10px;
+        font-size: .9rem;
+    }
+
+    .select2-container--default .select2-results__option--highlighted.select2-results__option--selectable {
+        background-color: #5897fb;
+        color: #fff;
+    }
+
+    .select2-container--default .select2-results__option--selected {
+        background-color: #e9eefb;
+    }
+</style>
+<style>
+    .ru-bar {
+        height: 8px;
+        border-radius: 6px;
+        background: #e2e8f0;
+        min-width: 90px;
+        overflow: hidden;
+    }
+
+        .ru-bar > i {
+            display: block;
+            height: 100%;
+            background: linear-gradient(90deg, #3b82f6, #2563eb);
+            border-radius: 6px;
+        }
+
+    .ru-sum {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 14px;
+    }
+
+        .ru-sum > div {
+            flex: 1 1 150px;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 10px 14px;
+            background: #fff;
+        }
+
+        .ru-sum b {
+            display: block;
+            font-size: 1.25rem;
+            color: #1e3a8a;
+        }
+
+        .ru-sum small {
+            color: #64748b;
+        }
+</style>
+
+<div class="sd-page" data-smart-page>
+    <div class="card shadow-sm border-0">
+
+        <div class="sd-head">
+            <h5 class="mb-0"><i class="fas fa-stopwatch me-2"></i>Room Wise Total Uses Time</h5>
+            <span class="sd-date"><i class="far fa-calendar me-1"></i>@DateTime.Today.ToString("dddd, dd MMMM yyyy")</span>
+        </div>
+
+        <div class="card-body">
+
+            @* 1. FILTER *@
+            <form method="get" class="sd-filter" id="usageForm">
+                <div class="row g-2 g-md-3 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label">Location</label>
+                        <select class="form-select" name="centerId" id="selCenter">
+                            <option value="0">All locations</option>
+                            @foreach (var c in Model.Centers)
+                            {
+                                <option value="@c.ID" selected="@(c.ID == Model.CenterId)">@c.CENTERNAME</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Room</label>
+                        <select class="form-select" name="roomId" id="selRoom">
+                            <option value="0">All rooms</option>
+                            @foreach (var r in Model.Rooms)
+                            {
+                                <option value="@r.ID" selected="@(r.ID == Model.RoomId)">@r.DisplayName</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <label class="form-label">From date</label>
+                        <input type="date" class="form-control" name="from" value="@Model.From.ToString("yyyy-MM-dd")" />
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <label class="form-label">To date</label>
+                        <input type="date" class="form-control" name="to" value="@Model.To.ToString("yyyy-MM-dd")" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Status</label>
+                        <select class="form-select" name="status" id="selStatus">
+                            <option value="1" selected="@(Model.Status == 1)">Approved</option>
+                            <option value="0" selected="@(Model.Status == 0)">Waiting</option>
+                            <option value="2" selected="@(Model.Status == 2)">Rejected</option>
+                            <option value="3" selected="@(Model.Status == 3)">Cancelled</option>
+                            <option value="-1" selected="@(Model.Status == -1)">All status</option>
+                        </select>
+                    </div>
+                    <div class="col-12 d-flex gap-2">
+                        <button type="submit" class="btn btn-primary"><i class="fas fa-magnifying-glass me-1"></i> Search</button>
+                        <a href="@Url.Action("RoomUsage", "Meeting")" class="btn btn-secondary"><i class="fas fa-rotate-left me-1"></i> Reset</a>
+                    </div>
+                </div>
+            </form>
+
+            @* 2. SUMMARY *@
+            <div class="ru-sum">
+                <div><b>@Model.Rows.Count</b><small>Rooms</small></div>
+                <div><b>@totalMeet</b><small>Meetings (@statusName)</small></div>
+                <div><b>@RoomUsageRowModel.Fmt(totalMin)</b><small>Total uses time</small></div>
+                <div><b>@period</b><small>Period</small></div>
+            </div>
+
+            @* 3. SEARCH + EXCEL + PRINT in ONE row *@
+            <div class="sd-tools">
+                <div class="input-group grow">
+                    <span class="input-group-text bg-white"><i class="fas fa-magnifying-glass text-muted"></i></span>
+                    <input type="text" class="form-control" id="sdSearch" placeholder="Search room or location..." autocomplete="off" />
+                </div>
+                <button type="button" class="btn btn-outline-success" onclick="SD.exportExcel('#reportTable','Room Wise Uses Time')"><i class="fas fa-file-excel me-1"></i> Excel</button>
+                <button type="button" class="btn btn-outline-secondary" data-title="@printTitle" onclick="SD.print('#reportTable', this.dataset.title)"><i class="fas fa-print me-1"></i> Print</button>
+                <button type="button" class="sd-link" id="sdClear" style="display:none"><i class="fas fa-xmark me-1"></i>Clear filters</button>
+                <button type="button" class="sd-link" id="sdResetSort" style="display:none"><i class="fas fa-arrow-rotate-left me-1"></i>Default order</button>
+            </div>
+
+            @* 4. RESULT *@
+            <div class="sd-pane active" id="pane-report">
+                <div class="sd-wrap table-responsive">
+                    <table class="sd-table" id="reportTable">
+                        <thead>
+                            <tr>
+                                <th class="text-center">SL</th>
+                                <th class="sortable" data-sort="loc">Location<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable" data-sort="room">Meeting Room<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable text-end" data-sort="meet">Total Meetings<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable text-end" data-sort="days">Days Used<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable text-end" data-sort="time">Total Time<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable text-end" data-sort="hours">Total Hours<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable text-end" data-sort="avg">Avg / Meeting<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable text-end" data-sort="longest">Longest<i class="fas fa-sort arr"></i></th>
+                                <th class="no-export">Share</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{
+                                int idx = 0;
+                            }
+                            @foreach (var r in Model.Rows)
+                            {
+                                int share = maxMin <= 0 ? 0 : (int)Math.Round(r.TOTALMINUTES * 100.0 / maxMin);
+                                string srch = (r.RoomDisplay + " " + r.CENTERNAME).ToLower();
+                                <tr data-search="@srch" data-day="past" data-i="@idx"
+                                    data-k-loc="@((r.CENTERNAME ?? "").ToLower())" data-k-room="@((r.ROOMTITLE ?? "").ToLower())"
+                                    data-k-meet="@r.TOTALMEETINGS" data-k-days="@r.DAYSUSED" data-k-time="@r.TOTALMINUTES" data-k-hours="@r.TOTALMINUTES"
+                                    data-k-avg="@r.AvgMinutes.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)" data-k-longest="@r.LONGESTMINUTES">
+                                    <td class="text-center" data-label="SL"><div class="sd-cell">@(++idx)</div></td>
+                                    <td data-label="Location"><div class="sd-cell">@r.CENTERNAME</div></td>
+                                    <td data-label="Meeting Room"><div class="sd-cell"><b>@r.ROOMTITLE</b>@if (r.SEATS.HasValue){
+                                    <span class="sd-sub">Capacity: @r.SEATS</span>
+                                }
+</div></td>
+                                <td class="text-end" data-label="Total Meetings"><div class="sd-cell">@r.TOTALMEETINGS</div></td>
+                                <td class="text-end" data-label="Days Used"><div class="sd-cell">@r.DAYSUSED</div></td>
+                                <td class="text-end" data-label="Total Time"><div class="sd-cell"><b>@RoomUsageRowModel.Fmt(r.TOTALMINUTES)</b></div></td>
+                                <td class="text-end" data-label="Total Hours"><div class="sd-cell">@r.TotalHours.ToString("0.00")</div></td>
+                                <td class="text-end" data-label="Avg / Meeting"><div class="sd-cell">@(r.TOTALMEETINGS == 0 ? "-" : RoomUsageRowModel.Fmt(r.AvgMinutes))</div></td>
+                                <td class="text-end" data-label="Longest"><div class="sd-cell">@(r.TOTALMEETINGS == 0 ? "-" : RoomUsageRowModel.Fmt(r.LONGESTMINUTES))</div></td>
+                                <td class="no-export" data-label="Share"><div class="sd-cell"><div class="ru-bar" title="@share% of the most used room"><i style="width:@(share)%"></i></div></div></td>
+                            </tr>
+                                                        }
+                            @if (Model.Rows.Count > 0)
+                            {
+                                <tr class="sd-total">
+                                    <td></td>
+                                    <td data-label="Total"><div class="sd-cell">Total</div></td>
+                                    <td data-label="Rooms"><div class="sd-cell">@Model.Rows.Count rooms</div></td>
+                                    <td class="text-end" data-label="Total Meetings"><div class="sd-cell">@totalMeet</div></td>
+                                    <td></td>
+                                    <td class="text-end" data-label="Total Time"><div class="sd-cell">@RoomUsageRowModel.Fmt(totalMin)</div></td>
+                                    <td class="text-end" data-label="Total Hours"><div class="sd-cell">@((totalMin / 60.0).ToString("0.00"))</div></td>
+                                    <td class="text-end" data-label="Avg / Meeting"><div class="sd-cell">@(totalMeet == 0 ? "-" : RoomUsageRowModel.Fmt(totalMin / totalMeet))</div></td>
+                                    <td></td>
+                                    <td class="no-export"></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="sd-empty" data-empty="all" style="@(Model.Rows.Count == 0 ? "" : "display:none")">
+                    <i class="far fa-calendar-check"></i> No room found for this filter.
+                </div>
+                <div class="sd-empty" data-empty="filter" style="display:none">
+                    <i class="fas fa-filter-circle-xmark"></i> No room matched your search.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            SD.initList();                                   // search + sort of the result
+
+            /* ===== load jQuery + Select2 if the layout has none (same helper as CreateMeeting.cshtml) ===== */
+            function loadScript(src, done) {
+                var s = document.createElement('script');
+                s.src = src; s.onload = done;
+                s.onerror = function () { console.error('Could not load ' + src); done(); };
+                document.head.appendChild(s);
+            }
+            function withSelect2(done) {
+                if (window.jQuery && jQuery.fn && jQuery.fn.select2) return done();
+                var loadS2 = function () { loadScript('https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js', done); };
+                if (window.jQuery) loadS2();
+                else loadScript('https://code.jquery.com/jquery-3.7.1.min.js', loadS2);
+            }
+            // start when the whole page (all layout scripts) is ready, so jQuery of the layout is surely there
+            function boot() { withSelect2(start); }
+            if (document.readyState === 'complete') boot(); else window.addEventListener('load', boot);
+
+            function start() {
+                /* ===== SEARCHABLE DROP DOWNS (Location, Room, Status) ===== */
+                var $center = jQuery('#selCenter'), $room = jQuery('#selRoom'), $status = jQuery('#selStatus');
+                if (!jQuery.fn.select2) { console.error('Select2 could not be loaded - normal dropdowns are used.'); return; }
+
+                [$center, $room, $status].forEach(function ($s) {
+                    try {
+                        if ($s.hasClass('select2-hidden-accessible')) $s.select2('destroy');     // page opened again by the smart menu
+                        $s.select2({
+                            theme: 'default',
+                            width: '100%',
+                            placeholder: $s.find('option:first').text(),
+                            language: { noResults: function () { return 'No result found'; } }
+                        });
+                    } catch (e) {
+                        console.error('Select2 failed for #' + $s.attr('id'), e);                 // the normal dropdown stays usable
+                        try { $s.select2('destroy'); } catch (x) { }
+                    }
+                });
+
+                // select2 4.1 does not always focus the search box - do it ourselves
+                jQuery(document).on('select2:open', function () {
+                    var f = document.querySelector('.select2-container--open .select2-search__field');
+                    if (f) f.focus();
+                });
+
+                /* ===== LOCATION -> ROOM (cascading, existing action Meeting/GetRooms) ===== */
+                $center.on('change', function () {
+                    $room.empty().append(new Option('All rooms', '0', false, false)).trigger('change');
+                    var id = parseInt($center.val(), 10) || 0;
+                    if (id <= 0) return;
+                    $room.prop('disabled', true);
+                    fetch('@Url.Action("GetRooms", "Meeting")?businessCenterId=' + encodeURIComponent(id), { credentials: 'same-origin' })
+                        .then(function (r) { return r.json(); })
+                        .then(function (list) {
+                            list.forEach(function (x) { $room.append(new Option(x.name, x.id, false, false)); });
+                            $room.trigger('change');
+                        })
+                        .catch(function () { SD.toast('Could not load the rooms.', true); })
+                        .finally(function () { $room.prop('disabled', false); });
+                });
+            }
+        })();
+    </script>
+}
+

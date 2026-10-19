@@ -1,0 +1,85 @@
+﻿@* Views/RoomDisplay/RoomDisplayLinks.cshtml  - address of the door display of every room (admin page, login needed) *@
+@model List<AlphaCare.Models.RoomDisplayLinkModel>
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = "Room Door Display";
+}
+
+<div class="sd-page" data-smart-page>
+    <div class="card shadow-sm border-0">
+        <div class="sd-head">
+            <h5 class="mb-0"><i class="fas fa-tablet-screen-button me-2"></i>Room Door Display</h5>
+            <span class="sd-date"><i class="far fa-calendar me-1"></i>@DateTime.Today.ToString("dddd, dd MMMM yyyy")</span>
+        </div>
+        <div class="card-body">
+            <p class="text-muted mb-3">Open the address of a room on the tablet at its door (full screen / kiosk mode). The screen shows the running meeting, the next meeting and all meetings of today, and refreshes by itself.</p>
+
+            <div class="sd-tools">
+                <div class="input-group grow">
+                    <span class="input-group-text bg-white"><i class="fas fa-magnifying-glass text-muted"></i></span>
+                    <input type="text" class="form-control" id="sdSearch" placeholder="Search location or room..." autocomplete="off" />
+                </div>
+                <button type="button" class="sd-link" id="sdClear" style="display:none"><i class="fas fa-xmark me-1"></i>Clear filters</button>
+                <button type="button" class="sd-link" id="sdResetSort" style="display:none"><i class="fas fa-arrow-rotate-left me-1"></i>Default order</button>
+            </div>
+
+            <div class="sd-pane active" id="pane-links">
+                <div class="sd-wrap table-responsive">
+                    <table class="sd-table">
+                        <thead>
+                            <tr>
+                                <th class="text-center">Action</th>
+                                <th class="sortable" data-sort="loc">Location<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable" data-sort="room">Meeting Room<i class="fas fa-sort arr"></i></th>
+                                <th>Display address</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{
+                                int i = 0;
+                            }
+                            @foreach (var r in Model)
+                            {
+                                string url = Url.Action("Room", "RoomDisplay", new { roomId = r.RoomId }, Context.Request.Scheme) ?? "";
+                                string srch = ((r.CenterName ?? "") + " " + (r.RoomTitle ?? "")).ToLower();
+                                <tr data-search="@srch" data-day="past" data-i="@(i++)" data-k-loc="@((r.CenterName ?? "").ToLower())" data-k-room="@((r.RoomTitle ?? "").ToLower())">
+                                    <td class="text-center text-nowrap" data-label="Action">
+                                        <div class="sd-cell">
+                                            <a class="sd-btn view" title="Open the display" href="@url" target="_blank"><i class="fas fa-up-right-from-square"></i></a>
+                                            <button type="button" class="sd-btn edit btn-copy" title="Copy address" data-url="@url"><i class="fas fa-copy"></i></button>
+                                        </div>
+                                    </td>
+                                    <td data-label="Location"><div class="sd-cell">@r.CenterName</div></td>
+                                    <td data-label="Meeting Room"><div class="sd-cell"><b>@r.RoomTitle</b>@if (r.Seats.HasValue){
+                                    <span class="sd-sub">Capacity: @r.Seats</span>
+                                }
+</div></td>
+                                <td data-label="Display address"><div class="sd-cell"><span class="sd-sub" style="font-size:.85rem;color:#475569">@url</span></div></td>
+                            </tr>
+                                                        }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="sd-empty" data-empty="filter" style="display:none"><i class="fas fa-filter-circle-xmark"></i> No room matched your search.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            SD.initList();
+            document.querySelectorAll('.btn-copy').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    var u = b.dataset.url;
+                    var done = function () { SD.toast('Address copied.'); };
+                    if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(u).then(done); return; }
+                    var t = document.createElement('textarea'); t.value = u; document.body.appendChild(t); t.select();
+                    try { document.execCommand('copy'); done(); } catch (e) { SD.toast('Copy failed.', true); }
+                    document.body.removeChild(t);
+                });
+            });
+        })();
+    </script>
+}

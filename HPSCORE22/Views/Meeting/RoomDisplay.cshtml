@@ -1,0 +1,397 @@
+﻿@* Views/RoomDisplay/RoomDisplay.cshtml  - TABLET AT THE DOOR OF A MEETING ROOM
+   Full screen page (no menu, no login). Shows: the meeting running NOW, the NEXT meeting, and ALL meetings of today.
+   Address of a room:   /RoomDisplay/{roomId}      (the admin page /RoomDisplay lists the address of every room)
+   The page asks the server again every minute, the clock runs by itself (and follows the SERVER time, not the tablet time).
+   Colours: change the :root block. *@
+@model AlphaCare.Models.RoomDisplayInfoModel
+@{
+    Layout = null;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <title>@Model.ROOMTITLE - Meeting Room Display</title>
+    <style>
+        /* ================= COLOURS - change here ================= */
+        :root {
+            --bg: #0b1220;
+            --panel: #141d31;
+            --panel-2: #1a2540;
+            --line: #26324f;
+            --text: #f1f5f9;
+            --muted: #94a3b8;
+            --free: #16a34a;
+            --busy: #dc2626;
+            --soon: #f59e0b;
+            --accent: #38bdf8;
+        }
+
+        * { box-sizing: border-box; }
+        html, body { height: 100%; margin: 0; }
+        body {
+            background: var(--bg); color: var(--text);
+            font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+            display: grid; grid-template-rows: auto 1fr auto; overflow: hidden; cursor: none;
+        }
+
+        /* ---------- top bar ---------- */
+        header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 26px; border-bottom: 1px solid var(--line); }
+        .room small { display: block; color: var(--muted); font-size: clamp(.8rem, 1.5vw, 1.1rem); letter-spacing: .08em; text-transform: uppercase; }
+        .room h1 { margin: 2px 0 0; font-size: clamp(1.4rem, 3.4vw, 2.6rem); font-weight: 700; line-height: 1.1; }
+        .room span { color: var(--muted); font-size: clamp(.8rem, 1.5vw, 1.1rem); }
+        .clock { text-align: right; }
+        .clock b { display: block; font-size: clamp(1.8rem, 4.6vw, 3.6rem); font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+        .clock span { color: var(--muted); font-size: clamp(.8rem, 1.6vw, 1.15rem); }
+
+        /* ---------- main ---------- */
+        main { display: grid; grid-template-columns: 1.3fr 1fr; gap: 20px; padding: 20px 26px; min-height: 0; }
+        .left { display: grid; grid-template-rows: 2fr 1fr; gap: 20px; min-height: 0; }
+        .card { background: var(--panel); border: 1px solid var(--line); border-radius: 22px; padding: clamp(12px, min(2.2vw, 3vh), 30px); min-height: 0; overflow: hidden; }
+        .tag { font-size: clamp(.75rem, 1.4vw, 1rem); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin-bottom: 8px; }
+
+        /* ---------- status (NOW) ---------- */
+        .status { display: flex; flex-direction: column; justify-content: center; border: 0; color: #fff; background: var(--free); transition: background .4s; }
+        body.busy .status { background: var(--busy); }
+        body.soon .status { background: var(--soon); color: #1f1300; }
+        .status { position: relative; }
+        .status > * { flex: none; }                      /* nothing in the big box may shrink when the box is full */
+        .status .tag { color: rgba(255,255,255,.85); }
+        body.busy .status .beep { color: #fff; }
+        body.soon .status .tag { color: rgba(31,19,0,.75); }
+        .status .big { font-size: clamp(1.8rem, min(6.4vw, 9vh), 5.2rem); font-weight: 800; line-height: 1.05; margin: 0; }
+        .status .title { font-size: clamp(1.2rem, min(3.6vw, 5vh), 2.8rem); font-weight: 700; line-height: 1.15; margin: 10px 0 4px; word-break: break-word;
+                         display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+        .status .meta { font-size: clamp(.9rem, min(2.2vw, 3vh), 1.7rem); opacity: .95; margin-top: 4px; }
+        .bar { height: clamp(8px, 1.2vw, 14px); background: rgba(255,255,255,.3); border-radius: 10px; overflow: hidden; margin-top: 16px; }
+        .bar i { display: block; height: 100%; width: 0; background: #fff; border-radius: 10px; transition: width 1s linear; }
+
+        /* ---------- LIVE NOW + beeping circle ---------- */
+        .live { display: inline-flex; align-items: center; gap: 12px; align-self: flex-start; margin-bottom: 10px; padding: 6px 18px 6px 14px;
+                border-radius: 40px; background: rgba(255,255,255,.22); font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
+                font-size: clamp(.9rem, 1.9vw, 1.35rem); }
+        .beep { position: relative; display: inline-block; flex: none; width: .85em; height: .85em; border-radius: 50%; background: #fff; animation: beepCore 1.2s ease-in-out infinite; }
+        .beep::before, .beep::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 2px solid currentColor; opacity: 0; animation: beepRing 1.2s ease-out infinite; }
+        .beep::after { animation-delay: .4s; }
+        .live .beep { box-shadow: 0 0 12px 2px rgba(255,255,255,.8); }
+        @@keyframes beepRing { 0% { transform: scale(1); opacity: .9; } 100% { transform: scale(3.2); opacity: 0; } }
+        @@keyframes beepCore { 0%, 100% { transform: scale(1); } 50% { transform: scale(.75); } }
+        @@keyframes nowGlow { 0%, 100% { box-shadow: 0 0 0 0 rgba(220,38,38,.0); } 50% { box-shadow: 0 0 22px 2px rgba(220,38,38,.55); } }
+
+        /* ---------- "meeting ends soon" warning line + flashing panel ---------- */
+        .warnline { align-self: flex-start; display: inline-block; margin-top: 10px; padding: 5px 14px; border-radius: 12px; background: rgba(0,0,0,.28);
+                    font-size: clamp(.95rem, min(2.2vw, 3.6vh), 1.7rem); font-weight: 800; }
+        @@keyframes flashPanel { 0%, 100% { filter: none; } 50% { filter: brightness(1.45) saturate(1.2); } }
+        body.flash .status { animation: flashPanel .7s ease-in-out infinite; }
+
+        /* ---------- up next ---------- */
+        .next .title { font-size: clamp(1.2rem, 3vw, 2.3rem); font-weight: 700; line-height: 1.15; margin: 4px 0; word-break: break-word;
+                       display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .next .time { font-size: clamp(1.1rem, 2.6vw, 2rem); color: var(--accent); font-weight: 700; }
+        .next .meta { font-size: clamp(.9rem, 1.9vw, 1.4rem); color: var(--muted); margin-top: 4px; }
+        .none { color: var(--muted); font-size: clamp(1.1rem, 2.4vw, 1.8rem); }
+
+        /* ---------- today list ---------- */
+        .today { display: flex; flex-direction: column; }
+        .today .tag { display: flex; justify-content: space-between; }
+        .list { flex: 1; overflow-y: auto; margin: 0 -6px; padding: 0 6px; scrollbar-width: none; }
+        .list::-webkit-scrollbar { display: none; }
+        .it { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; padding: 14px 14px; margin-bottom: 10px; background: var(--panel-2); border: 1px solid var(--line);
+              border-left: 6px solid #475569; border-radius: 14px; }
+        .it .t { font-weight: 700; font-size: clamp(.95rem, 2vw, 1.5rem); font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .it .n { font-size: clamp(.95rem, 2vw, 1.5rem); font-weight: 600; word-break: break-word; }
+        .it .s { grid-column: 2; font-size: clamp(.78rem, 1.5vw, 1.1rem); color: var(--muted); }
+        .it.done { opacity: .45; border-left-color: #475569; }
+        .it.now { border-left-color: var(--busy); background: #3a1620; animation: nowGlow 2s ease-in-out infinite; }
+        .it.next { border-left-color: var(--accent); }
+        .it.later { border-left-color: #64748b; }
+        .pill { display: inline-block; font-size: .72em; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; padding: 2px 9px; border-radius: 20px; margin-left: 8px; vertical-align: 2px; }
+        .pill.now { background: var(--busy); color: #fff; display: inline-flex; align-items: center; gap: 8px; }
+        .pill.now .beep { width: .7em; height: .7em; color: #fff; }
+        .pill.next { background: var(--accent); color: #082f49; }
+
+        /* ---------- footer ---------- */
+        footer { display: flex; justify-content: space-between; padding: 8px 26px 12px; color: var(--muted); font-size: clamp(.7rem, 1.2vw, .9rem); }
+        footer button { background: transparent; color: var(--text); border: 1px solid var(--line); border-radius: 20px; padding: 3px 14px; font-size: inherit; cursor: pointer; }
+        footer button.need { border-color: var(--soon); color: var(--soon); font-weight: 700; animation: needPulse 1.6s ease-in-out infinite; }
+        @@keyframes needPulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+        footer .off { color: var(--soon); font-weight: 700; display: none; }
+        body.offline footer .off { display: inline; }
+        body.show-cursor { cursor: default; }
+        body.show-cursor footer button { cursor: pointer; }
+
+        /* ---------- low screens (for example 1024 x 600): give the big box more room ---------- */
+        @@media (max-height: 680px) and (min-aspect-ratio: 1/1) {
+            .left { grid-template-rows: 3fr 1fr; gap: 12px; }
+            main { gap: 12px; padding: 12px 20px; }
+            header { padding: 8px 20px; }
+            .status .bar { margin-top: 8px; }
+            .live { margin-bottom: 4px; padding: 3px 14px 3px 10px; }
+            .status .title { margin: 4px 0 2px; -webkit-line-clamp: 2; }
+            .next .title { -webkit-line-clamp: 1; }
+        }
+
+        /* ---------- portrait tablet / phone ---------- */
+        @@media (max-aspect-ratio: 1/1), (max-width: 900px) {
+            main { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); padding: 14px 16px; gap: 14px; }
+            .left { grid-template-rows: auto auto; gap: 14px; }
+            header { padding: 10px 16px; }
+            .status { min-height: 30vh; }
+        }
+    </style>
+</head>
+<body class="free" data-room="@Model.ROOMID">
+
+    <header>
+        <div class="room">
+            <small>@Model.CENTERNAME</small>
+            <h1>@Model.ROOMTITLE</h1>
+            @if (Model.SEATS.HasValue)
+            {
+                <span>Capacity: @Model.SEATS</span>
+            }
+        </div>
+        <div class="clock"><b id="clock">--:--</b><span id="date"></span></div>
+    </header>
+
+    <main>
+        <div class="left">
+            <section class="card status" id="status"></section>
+            <section class="card next" id="next"></section>
+        </div>
+        <section class="card today">
+            <div class="tag"><span>Today's meetings</span><span id="count"></span></div>
+            <div class="list" id="list"></div>
+        </section>
+    </main>
+
+    <footer>
+        <span>Updated <span id="upd">-</span> <span class="off">&nbsp;&bull; connection lost - showing the last data</span></span>
+        <span><button type="button" id="snd" title="Alert sound">Sound</button></span>
+    </footer>
+
+    <script>
+        (function () {
+            var URL_DATA = '@Url.Action("Data", "RoomDisplay", new { roomId = Model.ROOMID })';
+            var SOON_MIN = 15;                 // "starting soon" when the next meeting starts within 15 minutes
+            var REFRESH_MS = 60000;            // ask the server every minute
+
+            /* ===== ALERT SOUND before the running meeting ends - change here =====
+               minutes : how many minutes before the end of the meeting
+               pattern : 'chime' = soft ding-dong (first warning), 'urgent' = fast beeps (last warning), 'end' = long low tone
+               add  { minutes: 1, pattern: 'urgent' }  or  { minutes: 0, pattern: 'end' }  (0 = when the meeting finishes) if you want more */
+            var ALERTS = [
+                { minutes: 15, pattern: 'chime'  },
+                { minutes: 5,  pattern: 'urgent' }
+            ];
+            var ALERTS_MAX = Math.max.apply(null, ALERTS.map(function (a) { return a.minutes; }).concat([0]));   // warning line shows from the first alert
+            var VOLUME = 2.5;                  // loudness: 1 = normal, 2.5 = loud (default), 4 = very loud (the sound is limited, it does not crack). Also turn UP the volume of the tablet itself.
+            var FLASH_SECONDS = 12;            // the red panel flashes this long when an alert sounds
+
+            var meetings = [], offset = 0, loadedDay = '', lastList = '';
+
+            /* ---------- sound (Web Audio: no sound file needed) ---------- */
+            var ac = null, soundOn = true, fired = {};
+            try { soundOn = localStorage.getItem('rd-sound') !== 'off'; } catch (e) { }
+
+            function unlock() {                                           // a browser lets a page make sound only after one tap / click
+                try {
+                    if (!ac) { var AC = window.AudioContext || window.webkitAudioContext; if (AC) ac = new AC(); }
+                    if (ac && ac.state === 'suspended') ac.resume();
+                } catch (e) { }
+                paintSndButton();
+            }
+            function ready() { return !!ac && ac.state === 'running'; }
+
+            // master output: gain (VOLUME) -> limiter, so a very loud sound does not crackle
+            var master = null;
+            function out() {
+                if (master) return master;
+                var g = ac.createGain(); g.gain.value = VOLUME;
+                if (ac.createDynamicsCompressor) {
+                    var c = ac.createDynamicsCompressor();
+                    c.threshold.value = -6; c.knee.value = 0; c.ratio.value = 20; c.attack.value = 0.002; c.release.value = 0.1;
+                    g.connect(c); c.connect(ac.destination);
+                } else { g.connect(ac.destination); }
+                return (master = g);
+            }
+            // one loud note: the pitch + a higher partial (small tablet speakers play 1000 - 3000 Hz much louder than low notes)
+            function tone(freq, at, dur, type, vol) {
+                var t0 = ac.currentTime + at, v = vol || 1;
+                [[freq, 1], [freq * 2, 0.5]].forEach(function (p) {
+                    var o = ac.createOscillator(), g = ac.createGain();
+                    o.type = type || 'square'; o.frequency.value = p[0];
+                    g.gain.setValueAtTime(0.0001, t0);
+                    g.gain.exponentialRampToValueAtTime(Math.max(0.001, v * p[1] * 0.5), t0 + 0.015);
+                    g.gain.setValueAtTime(Math.max(0.001, v * p[1] * 0.5), t0 + Math.max(0.02, dur - 0.12));
+                    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+                    o.connect(g); g.connect(out());
+                    o.start(t0); o.stop(t0 + dur + 0.05);
+                });
+            }
+            var PATTERNS = {
+                chime: function () {                                      // ding - dong - ding - dong - ding - dong  (3 times)
+                    [0, 1.5, 3.0].forEach(function (b) { tone(1175, b, 0.75, 'triangle', 1); tone(880, b + 0.5, 0.95, 'triangle', 1); });
+                },
+                urgent: function () {                                     // 4 fast loud beeps, 3 times
+                    [0, 1.4, 2.8].forEach(function (b) { [0, 0.3, 0.6, 0.9].forEach(function (d) { tone(1800, b + d, 0.2, 'square', 1); }); });
+                },
+                end: function () { tone(880, 0, 1.2, 'triangle', 1); tone(660, 0.5, 1.6, 'triangle', 1); tone(440, 1.0, 2, 'triangle', 1); }
+            };
+            function play(name) { if (soundOn && ready() && PATTERNS[name]) { try { PATTERNS[name](); } catch (e) { } } }
+
+            function flash() { document.body.classList.add('flash'); setTimeout(function () { document.body.classList.remove('flash'); }, FLASH_SECONDS * 1000); }
+
+            // called every second with the running meeting: plays an alert once when its time comes
+            function checkAlerts(cur, n) {
+                if (!cur) return;
+                var remain = (cur.end - n) / 60000, total = (cur.end - cur.start) / 60000;
+                ALERTS.forEach(function (a) {
+                    var key = cur.id + '|' + cur.end.getTime() + '|' + a.minutes;
+                    if (fired[key]) return;
+                    // time reached, but not later than 1 minute after it (a page opened late is not shouted at), meeting longer than the alert time
+                    var due = a.minutes === 0 ? (remain <= 0.02 && remain > -1) : (remain <= a.minutes && remain > a.minutes - 1 && total > a.minutes);
+                    if (due) { fired[key] = 1; flash(); play(a.pattern); }
+                });
+            }
+
+            function paintSndButton() {
+                var b = document.getElementById('snd');
+                if (!soundOn) { b.textContent = '\uD83D\uDD07 Sound off'; b.className = ''; }
+                else if (!ready()) { b.textContent = '\uD83D\uDD0A Tap to enable alert sound'; b.className = 'need'; }
+                else { b.textContent = '\uD83D\uDD0A Alert sound on'; b.className = ''; }
+            }
+            document.getElementById('snd').addEventListener('click', function (e) {
+                e.stopPropagation();
+                if (!soundOn || !ready()) { soundOn = true; unlock(); try { localStorage.setItem('rd-sound', 'on'); } catch (x) { } if (ready()) play('chime'); }   // tap = on + a test sound
+                else { soundOn = false; try { localStorage.setItem('rd-sound', 'off'); } catch (x) { } }
+                paintSndButton();
+            });
+            ['click', 'touchstart', 'keydown'].forEach(function (ev) {      // the first tap anywhere unlocks the sound
+                document.addEventListener(ev, function () { if (soundOn && !ready()) unlock(); }, { passive: true });
+            });
+            paintSndButton();
+            var $ = function (id) { return document.getElementById(id); };
+            var esc = function (t) { return String(t == null ? '' : t).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+            var pad = function (n) { return n < 10 ? '0' + n : '' + n; };
+
+            function hm(d) { var h = d.getHours(), m = d.getMinutes(), ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12; return h + ':' + pad(m) + ' ' + ap; }
+            function span(a, b) { return hm(a) + ' - ' + hm(b); }
+            function left(ms) {                // 3600000 -> "1h 00m" , 25 minutes -> "25 min"
+                var m = Math.max(0, Math.ceil(ms / 60000));
+                if (m < 60) return m + ' min';
+                return Math.floor(m / 60) + 'h ' + pad(m % 60) + 'm';
+            }
+            // write html only when it changed - otherwise the beeping animation would restart every second
+            function setHtml(el, html) { if (el.dataset.h !== html) { el.dataset.h = html; el.innerHTML = html; } }
+            function now() { return new Date(Date.now() + offset); }
+            function dayKey(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+            function who(m) { return m.calledBy ? 'Call by: ' + m.calledBy : (m.requestedBy ? 'Request by: ' + m.requestedBy : ''); }
+
+            /* ---------- load the data ---------- */
+            function load() {
+                fetch(URL_DATA, { cache: 'no-store' })
+                    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+                    .then(function (d) {
+                        var srv = new Date(d.now);
+                        offset = srv.getTime() - Date.now();                 // follow the SERVER clock
+                        loadedDay = dayKey(srv);
+                        meetings = (d.meetings || []).map(function (m) {
+                            return { id: m.id, title: m.title, calledBy: m.calledBy, requestedBy: m.requestedBy, start: new Date(m.start), end: new Date(m.end) };
+                        });
+                        document.body.classList.remove('offline');
+                        $('upd').textContent = hm(now());
+                        render();
+                    })
+                    .catch(function () { document.body.classList.add('offline'); render(); });
+            }
+
+            /* ---------- draw (every second) ---------- */
+            function render() {
+                var n = now(), cur = null, nxt = null;
+                if (dayKey(n) !== loadedDay && loadedDay) { load(); }      // midnight passed -> new day
+
+                meetings.forEach(function (m) {
+                    if (m.start <= n && m.end > n) { if (!cur) cur = m; }
+                    else if (m.start > n && !nxt) nxt = m;
+                });
+
+                checkAlerts(cur, n);
+                var soon = !cur && nxt && (nxt.start - n) <= SOON_MIN * 60000;
+                document.body.className = (document.body.classList.contains('offline') ? 'offline ' : '') + (document.body.classList.contains('flash') ? 'flash ' : '') + (cur ? 'busy' : soon ? 'soon' : 'free');
+
+                $('clock').textContent = hm(n);
+                $('date').textContent = n.toLocaleDateString('en-GB', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' });
+
+                /* --- NOW box --- */
+                var st = '', pct = 0;
+                if (cur) {
+                    pct = Math.min(100, Math.max(0, (n - cur.start) / (cur.end - cur.start) * 100));
+                    st = '<div class="live"><span class="beep"></span>Live now</div><p class="big">IN USE</p>' +
+                         '<div class="title">' + esc(cur.title) + '</div>' +
+                         '<div class="meta">' + esc(span(cur.start, cur.end)) + ' &nbsp;&bull;&nbsp; ends in ' + esc(left(cur.end - n)) + '</div>' +
+                         (who(cur) ? '<div class="meta">' + esc(who(cur)) + '</div>' : '') +
+                         '<div class="bar"><i id="barFill"></i></div>' +
+                         (cur.end - n <= ALERTS_MAX * 60000 ? '<div class="warnline">\u23F0 Meeting ends in ' + esc(left(cur.end - n)) + '</div>' : '');
+                } else if (soon) {
+                    st = '<div class="tag">Next meeting is about to start</div><p class="big">STARTING SOON</p>' +
+                         '<div class="meta">' + esc(nxt.title) + '</div><div class="meta">starts in ' + esc(left(nxt.start - n)) + ' (' + esc(hm(nxt.start)) + ')</div>';
+                } else {
+                    st = '<div class="tag">Meeting room</div><p class="big">AVAILABLE</p>' +
+                         '<div class="meta">' + (nxt ? 'Free until ' + esc(hm(nxt.start)) + ' (' + esc(left(nxt.start - n)) + ')' : 'No more meeting today') + '</div>';
+                }
+                setHtml($('status'), st);
+                if (cur && $('barFill')) $('barFill').style.width = pct.toFixed(1) + '%';
+
+                /* --- UP NEXT box --- */
+                var after = cur ? nxt : (soon ? null : nxt);                // when "starting soon" the big box already shows it
+                if (soon) { after = null; meetings.forEach(function (m) { if (m.start > nxt.start && !after) after = m; }); }
+                var nx = '<div class="tag">' + (soon ? 'Then' : 'Up next') + '</div>';
+                if (after) {
+                    nx += '<div class="time">' + esc(span(after.start, after.end)) + '</div><div class="title">' + esc(after.title) + '</div>' +
+                          '<div class="meta">starts in ' + esc(left(after.start - n)) + (who(after) ? ' &nbsp;&bull;&nbsp; ' + esc(who(after)) : '') + '</div>';
+                } else {
+                    nx += '<div class="none">No other meeting today</div>';
+                }
+                setHtml($('next'), nx);
+
+                /* --- TODAY list --- */
+                $('count').textContent = meetings.length ? meetings.length + (meetings.length === 1 ? ' meeting' : ' meetings') : '';
+                if (!meetings.length) {
+                    $('list').innerHTML = '<div class="none">No meeting today</div>';
+                } else {
+                    var h = '';
+                    meetings.forEach(function (m) {
+                        var cls = m.end <= n ? 'done' : (m === cur ? 'now' : (m === nxt ? 'next' : 'later'));
+                        h += '<div class="it ' + cls + '" data-c="' + cls + '"><div class="t">' + esc(span(m.start, m.end)) + '</div>' +
+                             '<div class="n">' + esc(m.title) +
+                             (cls === 'now' ? '<span class="pill now"><span class="beep"></span>Live now</span>' : cls === 'next' ? '<span class="pill next">Next</span>' : '') + '</div>' +
+                             (who(m) ? '<div class="s">' + esc(who(m)) + '</div>' : '') + '</div>';
+                    });
+                    if (h !== lastList) {                                    // draw only when something changed (keeps the scrolling smooth)
+                        var list = $('list'), keep = list.scrollTop;
+                        list.innerHTML = h; lastList = h;
+                        list.scrollTop = keep;
+                    }
+                }
+            }
+
+            // keep the running / next meeting in view (only when it changes)
+            var lastKey = '';
+            function focusList() {
+                var el = document.querySelector('#list .it.now') || document.querySelector('#list .it.next');
+                var key = el ? el.textContent : '';
+                if (key !== lastKey) { lastKey = key; if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+            }
+
+            load();
+            setInterval(load, REFRESH_MS);
+            setInterval(function () { render(); focusList(); }, 1000);
+            document.addEventListener('visibilitychange', function () { if (!document.hidden) load(); });
+        })();
+    </script>
+</body>
+</html>
