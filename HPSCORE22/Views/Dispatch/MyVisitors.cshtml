@@ -1,0 +1,107 @@
+@* Views/Dispatch/MyVisitors.cshtml  (old YA: Pages/Dispatch/MyVisitors.aspx)
+   LIST PAGE - my visitors' returnable samples that are not returned yet (DP_GATEENTRY.STAFFID = me, ISRETURNED = 0).
+   Return = old btnReturn (ISRETURNED = 1), View = old GateEntryView.aspx, Print = old GatentryPrint.aspx. *@
+@model List<AlphaCare.Models.GateEntryListItemModel>
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = $"({Model.Count}) My Visitors";
+}
+
+<div class="sd-page" data-smart-page>
+    <div class="card shadow-sm border-0">
+        <div class="sd-head">
+            <h5 class="mb-0"><i class="fas fa-people-arrows me-2"></i>My Visitors - Returnable Samples</h5>
+            <span class="sd-date"><i class="far fa-calendar me-1"></i>@DateTime.Today.ToString("dddd, dd MMMM yyyy")</span>
+        </div>
+
+        <div class="card-body">
+            @Html.AntiForgeryToken()
+
+            <div class="sd-tools">
+                <div class="input-group grow">
+                    <span class="input-group-text bg-white"><i class="fas fa-magnifying-glass text-muted"></i></span>
+                    <input type="text" class="form-control" id="sdSearch" placeholder="Search id, visitor, mobile, address..." autocomplete="off" />
+                </div>
+                <div class="input-group" style="max-width:210px">
+                    <span class="input-group-text bg-white"><i class="far fa-calendar text-muted"></i></span>
+                    <input type="date" class="form-control" id="sdDate" title="Show one date only" />
+                </div>
+                <button type="button" class="sd-link" id="sdClear" style="display:none"><i class="fas fa-xmark me-1"></i>Clear filters</button>
+                <button type="button" class="sd-link" id="sdResetSort" style="display:none"><i class="fas fa-arrow-rotate-left me-1"></i>Default order</button>
+            </div>
+
+            <div class="sd-pane active" id="pane-all" data-page-size="25">
+                <div class="sd-wrap table-responsive">
+                    <table class="sd-table">
+                        <thead>
+                            <tr>
+                                <th class="text-center">Action</th>
+                                <th class="sortable" data-sort="tx">Gate Entry ID<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable" data-sort="name">Sent By<i class="fas fa-sort arr"></i></th>
+                                <th>Mobile</th>
+                                <th>Address</th>
+                                <th class="sortable" data-sort="date">In Time<i class="fas fa-sort arr"></i></th>
+                                <th class="text-end">Samples</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (int i = 0; i < Model.Count; i++)
+                            {
+                                var r = Model[i];
+                                string search = $"{r.GATEENTRYID} {r.VISTORNAME} {r.VISTORMOBILE} {r.VISITORADDRESS}".ToLower();
+                                <tr data-search="@search" data-id="@r.ID" data-title="@r.GATEENTRYID" data-i="@i"
+                                    data-date="@(r.INDATETIME?.ToString("yyyy-MM-dd"))"
+                                    data-k-tx="@((r.GATEENTRYID ?? "").ToLower())" data-k-name="@((r.VISTORNAME ?? "").ToLower())" data-k-date="@(r.INDATETIME?.Ticks ?? 0)">
+                                    <td class="text-center text-nowrap" data-label="Action">
+                                        <div class="sd-cell">
+                                            <button type="button" class="sd-btn ok" title="Sample Returned" data-act="return"><i class="fas fa-arrow-rotate-left"></i></button>
+                                            <a class="sd-btn" title="View" href="@Url.Action("GateEntryDetails", "Dispatch", new { id = r.ID })"><i class="fas fa-eye"></i></a>
+                                            <a class="sd-btn" title="Print" target="_blank" rel="noopener" href="@Url.Action("GateEntryLabel", "Dispatch", new { id = r.ID })"><i class="fas fa-print"></i></a>
+                                        </div>
+                                    </td>
+                                    <td data-label="Gate Entry ID" class="text-nowrap"><div class="sd-cell"><a class="sd-title" href="@Url.Action("GateEntryDetails", "Dispatch", new { id = r.ID })">@r.GATEENTRYID</a></div></td>
+                                    <td data-label="Sent By"><div class="sd-cell">@r.VISTORNAME</div></td>
+                                    <td data-label="Mobile" class="text-nowrap">
+                                        <div class="sd-cell">
+                                            @if (!string.IsNullOrWhiteSpace(r.VISTORMOBILE))
+                                            {
+                                                <a class="text-decoration-none" href="tel:@r.VISTORMOBILE"><i class="fas fa-phone me-1"></i>@r.VISTORMOBILE</a>
+                                            }
+                                            else
+                                            {
+                                                <span>-</span>
+                                            }
+                                        </div>
+                                    </td>
+                                    <td data-label="Address"><div class="sd-cell">@r.VISITORADDRESS</div></td>
+                                    <td data-label="In Time" class="text-nowrap"><div class="sd-cell">@(r.INDATETIME?.ToString("dd/MM/yyyy hh:mm tt") ?? "-")</div></td>
+                                    <td data-label="Samples" class="text-end"><div class="sd-cell">@r.SAMPLES</div></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="sd-empty" data-empty="all" style="@(Model.Count == 0 ? "" : "display:none")"><i class="far fa-folder-open"></i> No returnable sample is waiting.</div>
+                <div class="sd-empty" data-empty="filter" style="display:none"><i class="fas fa-filter-circle-xmark"></i> No row matched your filter.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            SD.initList();
+            document.querySelectorAll('.sd-btn[data-act="return"]').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    var tr = b.closest('tr');
+                    SD.confirm({
+                        title: 'Mark the sample as returned?', text: tr.dataset.title, tone: 'success', icon: 'fa-arrow-rotate-left', yesText: 'Returned',
+                        run: function () { return SD.post('@Url.Action("ReturnSample", "Dispatch")', { id: tr.dataset.id }); }
+                    }).then(function (res) { if (res && res.success) { SD.toast(res.message); setTimeout(function () { location.reload(); }, 800); } });
+                });
+            });
+        })();
+    </script>
+}

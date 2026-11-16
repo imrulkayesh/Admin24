@@ -1,0 +1,460 @@
+@* Views/Dispatch/DispatchReport.cshtml  - one page for all dispatch reports (phase 7)
+   (old YA: Pages/DispatchReport/*.aspx, Pages/Dispatch/DispatchReport.aspx, LWReport.aspx, LWUserList.aspx, GatepassStatus.aspx,
+    LocationWiseDispatchOnlineReport.aspx). The controller says which filters and columns the report has.
+   Filters are sent with GET (the address can be bookmarked); "Excel" downloads the same rows (old btnExport). *@
+@model AlphaCare.Models.DispatchReportViewModel
+@using AlphaCare.Models
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = Model.Title;
+    var f = Model.Filter;
+    var F = Model.Filters;
+    bool has(ReportFilters x) => F.HasFlag(x);
+    string d(DateTime? v) => v?.ToString("yyyy-MM-dd") ?? "";
+
+    // the export link = the current filters + export=1
+    var q = new Dictionary<string, string?>
+    {
+        ["run"] = "1", ["export"] = "1",
+        ["From"] = f.From?.ToString("yyyy-MM-dd"), ["To"] = f.To?.ToString("yyyy-MM-dd"),
+        ["LocationId"] = f.LocationId > 0 ? f.LocationId.ToString() : null,
+        ["DepartmentId"] = f.DepartmentId > 0 ? f.DepartmentId.ToString() : null,
+        ["IssueTypeId"] = f.IssueTypeId > 0 ? f.IssueTypeId.ToString() : null,
+        ["CompanyId"] = f.CompanyId > 0 ? f.CompanyId.ToString() : null,
+        ["Staff"] = string.IsNullOrEmpty(f.Staff) ? null : f.Staff,
+        ["Mode"] = has(ReportFilters.Mode) ? f.Mode : null,
+        ["DispatchType"] = f.DispatchType > 0 ? f.DispatchType.ToString() : null,
+        ["Text"] = string.IsNullOrEmpty(f.Text) ? null : f.Text,
+        ["LcNo"] = string.IsNullOrEmpty(f.LcNo) ? null : f.LcNo,
+        ["LcAmount"] = string.IsNullOrEmpty(f.LcAmount) ? null : f.LcAmount,
+        ["Status"] = string.IsNullOrEmpty(f.Status) ? null : f.Status
+    };
+    string exportUrl = Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(Url.Action(Model.Action, "Dispatch")!,
+                           q.Where(kv => kv.Value != null).ToDictionary(kv => kv.Key, kv => kv.Value));
+    bool handOver = Model.Columns.Any(c => c.Kind == "nrecv");
+
+    string text(object? v, string kind) => v switch
+    {
+        null => "",
+        DateTime dt when kind == "day" => dt.ToString("dd/MM/yyyy"),
+        DateTime dt => dt.ToString("dd/MM/yyyy hh:mm tt"),
+        decimal m => m.ToString("0.##"),
+        double x => x.ToString("0.##"),
+        _ => Convert.ToString(v) ?? ""
+    };
+    string sortKey(object? v) => v switch
+    {
+        null => "",
+        DateTime dt => dt.Ticks.ToString(),
+        decimal or double or int or long => Convert.ToDecimal(v).ToString(System.Globalization.CultureInfo.InvariantCulture),
+        _ => (Convert.ToString(v) ?? "").ToLowerInvariant()
+    };
+}
+
+<div class="sd-page" data-smart-page>
+    <div class="card shadow-sm border-0">
+        <div class="sd-head">
+            <h5 class="mb-0"><i class="fas @Model.Icon me-2"></i>@Model.Title</h5>
+            <span class="sd-date"><i class="far fa-calendar me-1"></i>@DateTime.Today.ToString("dddd, dd MMMM yyyy")</span>
+        </div>
+
+        <div class="card-body">
+            @if (!string.IsNullOrEmpty(Model.Note))
+            {
+                <p class="text-muted small mb-2"><i class="fas fa-circle-info me-1"></i>@Model.Note</p>
+            }
+
+            @if (F != ReportFilters.None)
+            {
+                <form method="get" action="@Url.Action(Model.Action, "Dispatch")" class="row g-2 align-items-end mb-3" autocomplete="off">
+                    <input type="hidden" name="run" value="1" />
+                    @if (has(ReportFilters.Mode))
+                    {
+                        <div class="col-md-2">
+                            <label for="rMode" class="form-label fw-semibold">List by</label>
+                            <select id="rMode" name="Mode" class="form-select">
+                                <option value="sender" selected="@(f.Mode == "sender")">Sender</option>
+                                <option value="receiver" selected="@(f.Mode == "receiver")">Receiver</option>
+                            </select>
+                        </div>
+                    }
+                    @if (has(ReportFilters.Staff))
+                    {
+                        <div class="col-md-3">
+                            <label for="rStaff" class="form-label fw-semibold">Staff ID <span class="text-danger">*</span></label>
+                            <input type="text" id="rStaff" name="Staff" class="form-control" list="dlEmp" maxlength="200" value="@f.Staff" placeholder="Type ID or name" />
+                            <datalist id="dlEmp"></datalist>
+                        </div>
+                    }
+                    @if (has(ReportFilters.Text))
+                    {
+                        <div class="col-md-3">
+                            <label for="rText" class="form-label fw-semibold">Staff ID / Name / Mobile / Tracking No</label>
+                            <input type="text" id="rText" name="Text" class="form-control" list="dlEmp" maxlength="100" value="@f.Text" placeholder="Type to search" />
+                            <datalist id="dlEmp"></datalist>
+                        </div>
+                    }
+                    @if (has(ReportFilters.NoticeType))
+                    {
+                        <div class="col-md-2">
+                            <label for="rDType" class="form-label fw-semibold">Dispatch Type</label>
+                            <select id="rDType" name="DispatchType" class="form-select">
+                                <option value="0">ALL</option>
+                                @foreach (var t in Model.DispatchTypes)
+                                {
+                                    <option value="@t.ID" selected="@(t.ID == f.DispatchType)">@t.DTYPENAME</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                    @if (has(ReportFilters.Lc))
+                    {
+                        <div class="col-6 col-md-2 rp-lc" style="@(f.DispatchType == 3 ? "" : "display:none")">
+                            <label for="rLcNo" class="form-label fw-semibold">LC No.</label>
+                            <input type="text" id="rLcNo" name="LcNo" class="form-control" maxlength="50" value="@f.LcNo" />
+                        </div>
+                        <div class="col-6 col-md-2 rp-lc" style="@(f.DispatchType == 3 ? "" : "display:none")">
+                            <label for="rLcAmt" class="form-label fw-semibold">LC Amount (USD)</label>
+                            <input type="text" id="rLcAmt" name="LcAmount" class="form-control" inputmode="decimal" maxlength="20" value="@f.LcAmount" />
+                        </div>
+                    }
+                    @if (has(ReportFilters.NoticeStatus))
+                    {
+                        <div class="col-md-2">
+                            <label for="rStatus" class="form-label fw-semibold">Status</label>
+                            <select id="rStatus" name="Status" class="form-select">
+                                <option value="" selected="@(string.IsNullOrEmpty(f.Status))">ALL</option>
+                                <option value="waiting" selected="@(f.Status == "waiting")">Waiting</option>
+                                <option value="received" selected="@(f.Status == "received")">Received</option>
+                            </select>
+                        </div>
+                    }
+                    @if (has(ReportFilters.Dates) || has(ReportFilters.FromOnly))
+                    {
+                        <div class="col-6 col-md-2">
+                            <label for="rFrom" class="form-label fw-semibold">@(has(ReportFilters.FromOnly) ? "Created from" : "From")</label>
+                            <input type="date" id="rFrom" name="From" class="form-control" value="@d(f.From)" />
+                        </div>
+                    }
+                    @if (has(ReportFilters.Dates))
+                    {
+                        <div class="col-6 col-md-2">
+                            <label for="rTo" class="form-label fw-semibold">To</label>
+                            <input type="date" id="rTo" name="To" class="form-control" value="@d(f.To)" />
+                        </div>
+                    }
+                    @if (has(ReportFilters.Location))
+                    {
+                        <div class="col-md-3">
+                            <label for="rLoc" class="form-label fw-semibold">Location</label>
+                            <select id="rLoc" name="LocationId" class="form-select">
+                                <option value="0">ALL</option>
+                                @foreach (var c in Model.Locations)
+                                {
+                                    <option value="@c.ID" selected="@(c.ID == f.LocationId)">@c.CENTERNAME</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                    @if (has(ReportFilters.Company))
+                    {
+                        <div class="col-md-3">
+                            <label for="rCom" class="form-label fw-semibold">Company</label>
+                            <select id="rCom" name="CompanyId" class="form-select">
+                                <option value="0">ALL</option>
+                                @foreach (var c in Model.Companies)
+                                {
+                                    <option value="@c.ID" selected="@(c.ID == f.CompanyId)">@c.COMPANYNAME</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                    @if (has(ReportFilters.Department))
+                    {
+                        <div class="col-md-3">
+                            <label for="rDep" class="form-label fw-semibold">Department</label>
+                            <select id="rDep" name="DepartmentId" class="form-select">
+                                <option value="0">ALL</option>
+                                @foreach (var x in Model.Departments)
+                                {
+                                    <option value="@x.ID" selected="@(x.ID == f.DepartmentId)">@x.DEPARTMENTNAME</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                    @if (has(ReportFilters.IssueType))
+                    {
+                        <div class="col-md-3">
+                            <label for="rType" class="form-label fw-semibold">Issue Type</label>
+                            <select id="rType" name="IssueTypeId" class="form-select">
+                                <option value="0">ALL</option>
+                                @foreach (var t in Model.IssueTypes)
+                                {
+                                    <option value="@t.ID" selected="@(t.ID == f.IssueTypeId)">@t.ISSUETYPENAME</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                    <div class="col-md-auto d-flex gap-2">
+                        <button type="submit" class="btn btn-primary"><i class="fas fa-magnifying-glass me-1"></i>Search</button>
+                        @if (Model.Searched && Model.Rows.Count > 0)
+                        {
+                            <a class="btn btn-outline-success" href="@exportUrl"><i class="fas fa-file-excel me-1"></i>Excel (CSV)</a>
+                        }
+                    </div>
+                </form>
+            }
+            else if (Model.Searched && Model.Rows.Count > 0)
+            {
+                <div class="mb-3"><a class="btn btn-sm btn-outline-success" href="@exportUrl"><i class="fas fa-file-excel me-1"></i>Excel (CSV)</a></div>
+            }
+
+            @if (!string.IsNullOrEmpty(Model.Message))
+            {
+                <div class="alert alert-warning py-2"><i class="fas fa-circle-exclamation me-1"></i>@Model.Message</div>
+            }
+
+            @if (Model.Searched)
+            {
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                    <span class="fw-semibold">@Model.Rows.Count row(s)</span>
+                    @if (Model.Truncated)
+                    {
+                        <span class="text-danger small"><i class="fas fa-triangle-exclamation me-1"></i>Only the first @Model.MaxRows rows are shown. Please narrow the filter.</span>
+                    }
+                </div>
+
+                <div class="sd-tools">
+                    <div class="input-group grow">
+                        <span class="input-group-text bg-white"><i class="fas fa-magnifying-glass text-muted"></i></span>
+                        <input type="text" class="form-control" id="sdSearch" placeholder="Search in the result..." autocomplete="off" />
+                    </div>
+                    <button type="button" class="sd-link" id="sdClear" style="display:none"><i class="fas fa-xmark me-1"></i>Clear filters</button>
+                    <button type="button" class="sd-link" id="sdResetSort" style="display:none"><i class="fas fa-arrow-rotate-left me-1"></i>Default order</button>
+                </div>
+
+                <div class="sd-pane active" id="pane-all" data-page-size="25">
+                    <div class="sd-wrap table-responsive">
+                        <table class="sd-table">
+                            <thead>
+                                <tr>
+                                    <th class="text-center">#</th>
+                                    @for (int c = 0; c < Model.Columns.Count; c++)
+                                    {
+                                        if (Model.Columns[c].Kind == "nrecv")
+                                        {
+                                            <th class="text-center sd-noexport">@Model.Columns[c].Header</th>
+                                            continue;
+                                        }
+                                        <th class="sortable text-nowrap" data-sort="c@(c)">@Model.Columns[c].Header<i class="fas fa-sort arr"></i></th>
+                                    }
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @for (int i = 0; i < Model.Rows.Count; i++)
+                                {
+                                    var row = Model.Rows[i];
+                                    var cells = Model.Columns.Select(col => { row.TryGetValue(col.Key, out var v); return v; }).ToList();
+                                    string search = string.Join(" ", cells.Select((v, k) => text(v, Model.Columns[k].Kind))).ToLowerInvariant();
+                                    row.TryGetValue("ID", out var idObj);
+                                    long rowId = idObj == null ? 0 : Convert.ToInt64(idObj);
+                                    // sort keys data-k-c0, data-k-c1 ... (values HTML-encoded)
+                                    string keys = string.Join(" ", cells.Select((v, c) => $"data-k-c{c}=\"{System.Text.Encodings.Web.HtmlEncoder.Default.Encode(sortKey(v))}\""));
+                                    <tr data-search="@search" data-i="@i" @Html.Raw(keys)>
+                                        <td class="text-center text-muted" data-label="#"><div class="sd-cell">@(i + 1)</div></td>
+                                        @for (int c = 0; c < cells.Count; c++)
+                                        {
+                                            var col = Model.Columns[c];
+                                            string t = text(cells[c], col.Kind);
+                                            <td data-label="@col.Header" class="@(col.Kind is "date" or "day" or "tx" or "ge" or "notice" ? "text-nowrap" : "") @(col.Kind == "num" ? "text-end" : "") @(col.Kind == "nrecv" ? "text-center no-export" : "")">
+                                                <div class="sd-cell">
+                                                    @if (col.Kind == "tx" && rowId > 0 && t.Length > 0)
+                                                    {
+                                                        <a class="sd-title" href="@Url.Action("Tracking", "Dispatch", new { tx = t })" title="Track">@t</a>
+                                                    }
+                                                    else if (col.Kind == "ge" && rowId > 0)
+                                                    {
+                                                        <a class="sd-title" href="@Url.Action("GateEntryDetails", "Dispatch", new { id = rowId })" title="View gate entry">@(t.Length == 0 ? "View" : t)</a>
+                                                    }
+                                                    else if (col.Kind == "notice" && rowId > 0)
+                                                    {
+                                                        <a class="sd-title" href="@Url.Action("NoticeView", "Dispatch", new { id = rowId })" title="View details">@(t.Length == 0 ? "View" : t)</a>
+                                                    }
+                                                    else if (col.Kind == "nrecv")
+                                                    {
+                                                        if (t == "Waiting" && rowId > 0)
+                                                        {
+                                                            row.TryGetValue("TRACKINGNO", out var tn);
+                                                            row.TryGetValue("TSTAFFID", out var ts);
+                                                            string tnText = Convert.ToString(tn) ?? "";
+                                                            <button type="button" class="sd-btn ok" title="Hand over (Received)" data-recv="@rowId"
+                                                                    data-title="@(tnText.Length > 0 ? tnText : "#" + rowId)"
+                                                                    data-to="@(Convert.ToString(ts))"><i class="fas fa-hand-holding"></i></button>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="badge bg-success-subtle text-success">Received</span>
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        @(t.Length == 0 ? "-" : t)
+                                                    }
+                                                </div>
+                                            </td>
+                                        }
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="sd-empty" data-empty="all" style="@(Model.Rows.Count == 0 ? "" : "display:none")"><i class="far fa-folder-open"></i> No data found.</div>
+                    <div class="sd-empty" data-empty="filter" style="display:none"><i class="fas fa-filter-circle-xmark"></i> No row matched your search.</div>
+                </div>
+            }
+            else if (string.IsNullOrEmpty(Model.Message))
+            {
+                <div class="text-muted"><i class="fas fa-filter me-1"></i>Choose the filters and press Search.</div>
+            }
+        </div>
+    </div>
+
+    @if (handOver)
+    {
+        @* old RNItems mpAssign pop-up: who collects the item *@
+        @Html.AntiForgeryToken()
+        <div class="modal fade" id="recvModal" tabindex="-1" aria-labelledby="recvTitle" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="recvTitle"><i class="fas fa-hand-holding me-2"></i>Hand over <span id="recvTx" class="fw-bold"></span></h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="row g-2">
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold" for="rcStaff">Receiver Staff ID</label>
+                                <input type="text" id="rcStaff" class="form-control" list="dlRecv" maxlength="200" autocomplete="off" placeholder="Type ID or name" />
+                                <datalist id="dlRecv"></datalist>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold" for="rcName">Receiver Name <span class="text-danger">*</span></label>
+                                <input type="text" id="rcName" class="form-control" maxlength="50" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold" for="rcCompany">Receiver Company</label>
+                                <input type="text" id="rcCompany" class="form-control" maxlength="100" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold" for="rcDept">Receiver Department</label>
+                                <input type="text" id="rcDept" class="form-control" maxlength="50" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold" for="rcMobile">Receiver Mobile</label>
+                                <input type="text" id="rcMobile" class="form-control" maxlength="50" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold" for="rcEmail">Receiver Email</label>
+                                <input type="text" id="rcEmail" class="form-control" maxlength="50" />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-semibold" for="rcRemarks">Receiver Remarks</label>
+                                <input type="text" id="rcRemarks" class="form-control" maxlength="200" />
+                            </div>
+                        </div>
+                        <div id="rcErr" class="alert alert-danger py-2 mt-3 mb-0" style="display:none"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-success" id="rcSave"><i class="fas fa-check me-1"></i>Received</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            var byId = function (id) { return document.getElementById(id); };
+            if (byId('pane-all')) SD.initList();
+
+            // staff auto complete (old AutoCompleteExtender on tbxStaffID)
+            var searchUrl = '@Url.Action("SearchEmployee", "Dispatch")';
+            function suggest(box, listId) {
+                if (!box) return;
+                var t = null;
+                box.addEventListener('input', function () {
+                    clearTimeout(t);
+                    var q = box.value.trim();
+                    if (q.length < 2) return;
+                    t = setTimeout(function () {
+                        fetch(searchUrl + '?term=' + encodeURIComponent(q), { credentials: 'same-origin' }).then(function (r) { return r.json(); })
+                            .then(function (list) {
+                                byId(listId).innerHTML = list.map(function (s) { return '<option value="' + SD.esc(s) + '"></option>'; }).join('');
+                            }).catch(function () { });
+                    }, 250);
+                });
+            }
+            suggest(byId('rStaff'), 'dlEmp');
+            suggest(byId('rText'), 'dlEmp');
+
+            // LC No. / LC Amount only for dispatch type 3 (old pnlLc)
+            var dType = byId('rDType');
+            if (dType) dType.addEventListener('change', function () {
+                var lc = dType.value === '3';
+                document.querySelectorAll('.rp-lc').forEach(function (d) { d.style.display = lc ? '' : 'none'; });
+                if (!lc) { if (byId('rLcNo')) byId('rLcNo').value = ''; if (byId('rLcAmt')) byId('rLcAmt').value = ''; }
+            });
+
+            // hand over (old RNItems: btnAssignEdit -> mpAssign -> btnAssign_Click)
+            var modalEl = byId('recvModal');
+            if (!modalEl) return;
+            var modal = bootstrap.Modal.getOrCreateInstance(modalEl), recvId = 0;
+            var fields = ['rcStaff', 'rcName', 'rcCompany', 'rcDept', 'rcMobile', 'rcEmail', 'rcRemarks'];
+            suggest(byId('rcStaff'), 'dlRecv');
+
+            function fill(staff) {
+                if (!staff) return Promise.resolve();
+                return fetch('@Url.Action("NoticeEmployee", "Dispatch")?staffId=' + encodeURIComponent(staff), { credentials: 'same-origin' })
+                    .then(function (r) { return r.json(); })
+                    .then(function (e) {
+                        if (!e.found) { SD.toast('Employee not found.', true); return; }
+                        var put = function (id, v) { var el = byId(id); el.value = (v || '').slice(0, el.maxLength > 0 ? el.maxLength : 500); };
+                        put('rcStaff', e.staffId); put('rcName', e.name); put('rcCompany', e.company);
+                        put('rcDept', e.department); put('rcMobile', e.mobile); put('rcEmail', e.email);
+                    }).catch(function () { SD.toast('Could not find the employee.', true); });
+            }
+            byId('rcStaff').addEventListener('change', function () { fill(byId('rcStaff').value.trim()); });
+
+            document.querySelectorAll('[data-recv]').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    recvId = b.dataset.recv;
+                    fields.forEach(function (id) { byId(id).value = ''; });
+                    byId('rcErr').style.display = 'none';
+                    byId('recvTx').textContent = b.dataset.title || '';
+                    modal.show();
+                    fill(b.dataset.to);                  // the addressee is the usual receiver
+                });
+            });
+            byId('rcSave').addEventListener('click', function () {
+                var btn = this, html = btn.innerHTML, v = function (id) { return byId(id).value.trim(); };
+                if (!v('rcName')) { byId('rcErr').textContent = 'Enter the Receiver Name.'; byId('rcErr').style.display = ''; return; }
+                SD.lock(btn, 'Saving...');
+                SD.post('@Url.Action("ReceiveNotice", "Dispatch")', {
+                    Id: recvId, StaffId: v('rcStaff'), Name: v('rcName'), Company: v('rcCompany'), Department: v('rcDept'),
+                    Mobile: v('rcMobile'), Email: v('rcEmail'), Remarks: v('rcRemarks')
+                }).then(function (res) {
+                    if (!res.success) throw new Error(res.message);
+                    modal.hide(); SD.toast(res.message);
+                    setTimeout(function () { location.reload(); }, 800);
+                }).catch(function (err) {
+                    byId('rcErr').textContent = (err && err.message && isNaN(err.message)) ? err.message : 'Server error. Please try again.';
+                    byId('rcErr').style.display = '';
+                }).finally(function () { btn.disabled = false; btn.innerHTML = html; });
+            });
+        })();
+    </script>
+}

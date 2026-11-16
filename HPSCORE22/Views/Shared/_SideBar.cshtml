@@ -1,16 +1,16 @@
 ﻿@* Views/Shared/_SideBar.cshtml
-   The left menu. Its styles are NOT here any more - they are in wwwroot/css/app-standard.css [2]
-   (styles inside the body made the menu flash on every page load). *@
+   Left menu shell. Menu items still come from the _SideMenuItems partial (unchanged).
+   Styles: wwwroot/css/app-standard.css block [8]. *@
 <!--begin::Sidebar-->
-<aside class="app-sidebar bg-body-secondary shadow" data-bs-theme="light" style="font-size: 0.875rem;">
-    <!--begin::Sidebar Brand-->
+<aside class="app-sidebar sd-side shadow" data-bs-theme="dark">
     <div class="sidebar-brand">
         <a asp-area="" asp-controller="Home" asp-action="Index" class="brand-link">
+            <span class="sd-logo"><i class="fa-solid fa-user-shield"></i></span>
             <span class="brand-text fw-bold">Admin 24/7</span>
         </a>
     </div>
-    <!--end::Sidebar Brand-->
-    <!--begin::Sidebar Wrapper-->
+
+
     <div class="sidebar-wrapper">
         <nav class="mt-2">
             <ul class="nav sidebar-menu flex-column" data-lte-toggle="treeview" role="navigation"
@@ -19,12 +19,18 @@
             </ul>
         </nav>
     </div>
-    <!--end::Sidebar Wrapper-->
 </aside>
 <!--end::Sidebar-->
-@* put the menu back to the scroll position of the last page BEFORE the browser paints (no jump) *@
+@* runs BEFORE the first paint: apply the user's saved open/closed choice (no flash) + menu scroll position.
+   The same choice is kept later by block [10] of app-standard.js *@
 <script>
     (function () {
+        try {
+            var b = document.body, desk = window.innerWidth > 992;
+            var closed = desk ? localStorage.getItem('sdSidebarCollapsed') === '1' : true;
+            b.classList.toggle('sidebar-collapse', closed);
+            b.classList.toggle('sidebar-open', !closed);
+        } catch (e) { }
         try {
             var v = sessionStorage.getItem('sdSideScroll'), w = document.querySelector('.sidebar-wrapper');
             if (v !== null && w) w.scrollTop = Number(v) || 0;

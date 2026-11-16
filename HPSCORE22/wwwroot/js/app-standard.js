@@ -134,13 +134,63 @@
          .sd-tile[data-day]  with [data-num]           All / Today / Upcoming / Past tiles (optional)
          #sdSearch  #sdDate  #sdClear  #sdResetSort    search box, date box, clear link, default-order link
          every <tr> : data-search, data-day, data-date, data-i, data-k-xxx (value used to sort column "xxx")
-         every sortable <th class="sortable" data-sort="xxx">                                              */
+         every sortable <th class="sortable" data-sort="xxx">
+         paging (optional): <div class="sd-pane" data-page-size="25"> -> pager under the table (10 / 25 / 50 / 100 / All rows).
+           Rows of other pages only get the class "sd-pg-off", so Print / Excel still take every matching row.   */
+    var PAGE_SIZES = [10, 25, 50, 100, 0];                 // 0 = all rows
     SD.initList = function () {
         var tabs = document.querySelectorAll('.sd-tab'), panes = document.querySelectorAll('.sd-pane'),
             tiles = document.querySelectorAll('.sd-tile');
         if (!panes.length) return;
         var dayKey = 'sdDay:' + location.pathname, dayFilter = remember(dayKey) || 'all', sortKey = null, sortDir = 1;
         var search = $('sdSearch'), dateBox = $('sdDate'), clear = $('sdClear'), resetSort = $('sdResetSort');
+        var sizeKey = 'sdPageSize:' + location.pathname, pageOf = {};
+
+        function pageSize(pane) {
+            var saved = remember(sizeKey);
+            var n = saved !== null && saved !== '' ? Number(saved) : Number(pane.getAttribute('data-page-size'));
+            return PAGE_SIZES.indexOf(n) >= 0 ? n : 25;
+        }
+        // pager under the table: "Showing 26-50 of 312"  rows per page  << < 1 2 3 ... > >>
+        function drawPager(pane, total, page, pages, size) {
+            var pager = pane.querySelector('.sd-pager');
+            if (!pager) {
+                pager = document.createElement('div'); pager.className = 'sd-pager';
+                var wrap = pane.querySelector('.sd-wrap');
+                if (wrap) wrap.after(pager); else pane.appendChild(pager);
+                pager.addEventListener('click', function (e) {
+                    var b = e.target.closest('button[data-pg]'); if (!b || b.disabled) return;
+                    pageOf[pane.id] = Number(b.dataset.pg); refresh(true);
+                    var top = pane.getBoundingClientRect().top; if (top < 0) window.scrollBy(0, top - 70);
+                });
+                pager.addEventListener('change', function (e) {
+                    if (!e.target.matches('select.sd-pg-size')) return;
+                    remember(sizeKey, e.target.value); pageOf[pane.id] = 1; refresh(true);
+                });
+            }
+            pager.style.display = total ? '' : 'none';
+            if (!total) return;
+            var from = size ? (page - 1) * size + 1 : 1, to = size ? Math.min(total, page * size) : total;
+            var nums = [], add = function (n) { if (nums.indexOf(n) < 0 && n >= 1 && n <= pages) nums.push(n); };
+            add(1); for (var n = page - 2; n <= page + 2; n++) add(n); add(pages);
+            nums.sort(function (a, b) { return a - b; });
+            var btn = function (n, html, title, on) {
+                return '<button type="button" data-pg="' + n + '"' + (title ? ' title="' + title + '"' : '') +
+                    (on ? ' class="on" aria-current="page"' : '') + ((n < 1 || n > pages || (on && html === String(n))) ? ' disabled' : '') + '>' + html + '</button>';
+            };
+            var links = btn(1, '&laquo;', 'First page') + btn(page - 1, '&lsaquo;', 'Previous page');
+            nums.forEach(function (n, i) {
+                if (i && n - nums[i - 1] > 1) links += '<span class="gap">&hellip;</span>';
+                links += btn(n, String(n), '', n === page);
+            });
+            links += btn(page + 1, '&rsaquo;', 'Next page') + btn(pages, '&raquo;', 'Last page');
+            pager.innerHTML =
+                '<span class="sd-pg-info">Showing <b>' + from + '-' + to + '</b> of <b>' + total + '</b></span>' +
+                '<label class="sd-pg-rows">Rows <select class="sd-pg-size" data-native>' +
+                PAGE_SIZES.map(function (s) { return '<option value="' + s + '"' + (s === size ? ' selected' : '') + '>' + (s || 'All') + '</option>'; }).join('') +
+                '</select></label>' +
+                (pages > 1 ? '<nav class="sd-pg-nav" aria-label="Pages">' + links + '</nav>' : '');
+        }
 
         function activePane() { return document.querySelector('.sd-pane.active') || panes[0]; }
 
@@ -156,7 +206,7 @@
             t.addEventListener('click', function () { dayFilter = t.dataset.day; remember(dayKey, dayFilter); refresh(); });
         });
 
-        function refresh() {
+        function refresh(keepPage) {
             var pane = activePane(), q = search ? search.value.trim().toLowerCase() : '', d = dateBox ? dateBox.value : '';
             var rows = Array.prototype.slice.call(pane.querySelectorAll('tbody tr:not(.sd-total)'));      // a Total row is never filtered / sorted
 
@@ -165,14 +215,22 @@
             Object.keys(c).forEach(function (k) { var n = document.querySelector('[data-num="' + k + '"]'); if (n) n.textContent = c[k]; });
             tiles.forEach(function (t) { t.classList.toggle('active', t.dataset.day === dayFilter); });
 
-            var shown = 0;
+            var shown = 0, matched = [];
             rows.forEach(function (tr) {
                 var ok = (dayFilter === 'all' || tr.dataset.day === dayFilter) &&
                     (!d || tr.dataset.date === d) &&
                     (!q || (tr.dataset.search || '').indexOf(q) !== -1);
                 tr.style.display = ok ? '' : 'none';
-                if (ok) shown++;
+                tr.classList.remove('sd-pg-off');
+                if (ok) { shown++; matched.push(tr); }
             });
+            if (pane.hasAttribute('data-page-size')) {
+                var size = pageSize(pane), pages = size ? Math.max(1, Math.ceil(shown / size)) : 1;
+                var page = keepPage === true ? Math.min(Math.max(1, pageOf[pane.id] || 1), pages) : 1;
+                pageOf[pane.id] = page;
+                if (size) matched.forEach(function (tr, i) { if (i < (page - 1) * size || i >= page * size) tr.classList.add('sd-pg-off'); });
+                drawPager(pane, shown, page, pages, size);
+            }
             var wrap = pane.querySelector('.sd-wrap'), none = pane.querySelector('[data-empty="filter"]');
             if (wrap) wrap.style.display = shown ? '' : 'none';
             if (none) none.style.display = (rows.length && !shown) ? '' : 'none';
@@ -351,4 +409,326 @@
         });
         window.addEventListener('popstate', function () { smartLoad(location.href, false); });
     }
+
+    /* [8] ===== EVERY DROP DOWN = SEARCHABLE (Select2, like Create Meeting > Location), EVERY DATE BOX = DD/MM/YYYY =====
+       Runs by itself on every page (also after smart navigation and for boxes added later). Nothing to do in the views.
+       Opt out with the attribute  data-native  on a <select> / <input type="date">.
+       DROP DOWN: the <select> stays the real field. Page code keeps working:
+         sel.value = x / $(sel).val(x)          -> the Select2 box shows the new value
+         addEventListener('change') / onchange  -> still called when the user picks a value (Select2 alone only calls jQuery handlers)
+         drop downs that a page turns into Select2 itself (Meeting pages) are left alone.
+       DATE: the <input type="date"> becomes a hidden field that keeps the value as yyyy-mm-dd (forms, filters and page code
+         see no change); next to it a text box shows / takes DD/MM/YYYY and opens a small calendar.                    */
+    var S2_ATTR = 'data-sd-s2';
+    function jqS2() { return (window.jQuery && jQuery.fn && jQuery.fn.select2) ? jQuery : null; }
+    function ownS2(sel) { var jq = jqS2(); return !!(jq && sel._sdS2 && jq(sel).data('select2') === sel._sdS2); }
+    function refreshS2(sel) { if (ownS2(sel)) jqS2()(sel).trigger('change.select2'); }      // namespaced: only Select2 redraws
+
+    var selValue = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value'),
+        selIndex = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'selectedIndex');
+
+    var jqPatched = false;
+    function patchJq() {
+        var jq = jqS2();
+        if (jqPatched || !jq) return;
+        jqPatched = true;
+        // $(sel).trigger('change') of Select2 / page code -> a real DOM event, so native listeners run too (jQuery ones once)
+        ['change', 'input'].forEach(function (type) {
+            var old = jq.event.special[type] || {}, prevTrigger = old.trigger;
+            jq.event.special[type] = jq.extend({}, old, {
+                trigger: function (e) {
+                    if (this.nodeName === 'SELECT' && ownS2(this) && !(e && e.namespace)) {
+                        this.dispatchEvent(new Event(type, { bubbles: true }));
+                        return false;
+                    }
+                    return prevTrigger ? prevTrigger.apply(this, arguments) : undefined;
+                }
+            });
+        });
+        // $(sel).val(x) sets the options directly (not sel.value) -> redraw too
+        var hook = jq.valHooks.select, origSet = hook && hook.set;
+        if (origSet) hook.set = function (elem, value) { var r = origSet.apply(this, arguments); refreshS2(elem); return r; };
+        // Select2 4.1 does not always focus the search box
+        jq(document).on('select2:open', function (e) {
+            if (!e.target || !e.target.hasAttribute(S2_ATTR)) return;
+            setTimeout(function () { var f = document.querySelector('.select2-container--open .select2-search__field'); if (f) f.focus(); }, 0);
+        });
+    }
+
+    function enhanceSelect(sel) {
+        var jq = jqS2();
+        if (!jq || sel.hasAttribute(S2_ATTR) || sel.hasAttribute('data-native') || sel.closest('[data-native]')) return;
+        if (sel.classList.contains('select2-hidden-accessible') || sel.size > 1 || sel.hidden) return;   // list boxes stay as they are
+        if (sel.style.display === 'none' || getComputedStyle(sel).display === 'none') return;       // a drop down the page hides on purpose
+        if (sel.closest('.dataTables_length, .swal2-container, .select2-container')) return;
+        patchJq();
+        var modal = sel.closest('.modal'), $s = jq(sel);
+        try {
+            $s.select2({
+                theme: 'default', width: '100%',
+                dropdownParent: modal ? jq(modal) : jq(document.body),
+                language: { noResults: function () { return 'No result found'; } }
+            });
+        } catch (err) { console.error('Select2 failed', err); return; }
+        sel.setAttribute(S2_ATTR, '1');
+        sel._sdS2 = $s.data('select2');
+        var box = sel.nextElementSibling;
+        if (box && box.classList.contains('select2-container')) {
+            box.classList.add('sd-s2');
+            if (sel.classList.contains('form-select-sm')) box.classList.add('sd-s2-sm');
+            if (sel.style.maxWidth) box.style.maxWidth = sel.style.maxWidth;
+        }
+        if (sel._sdS2 && sel._sdS2.$dropdown) sel._sdS2.$dropdown.addClass('sd-s2-dd');
+        Object.defineProperty(sel, 'value', { configurable: true, get: function () { return selValue.get.call(this); }, set: function (v) { selValue.set.call(this, v); refreshS2(this); } });
+        Object.defineProperty(sel, 'selectedIndex', { configurable: true, get: function () { return selIndex.get.call(this); }, set: function (v) { selIndex.set.call(this, v); refreshS2(this); } });
+    }
+
+    // ---------- DD/MM/YYYY date box ----------
+    var inValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+    var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    function pad2(n) { return (n < 10 ? '0' : '') + n; }
+    function isoOf(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+    function dateOfIso(v) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || ''); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; }
+    function dmyOfIso(v) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || ''); return m ? m[3] + '/' + m[2] + '/' + m[1] : ''; }
+    function isoOfDmy(t) {                                     // "5/1/2026", "05-01-2026", "05.01.2026" -> "2026-01-05", wrong date -> null
+        var m = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/.exec((t || '').trim());
+        if (!m) return null;
+        var d = +m[1], mo = +m[2], y = +m[3], dt = new Date(y, mo - 1, d);
+        return (dt.getFullYear() === y && dt.getMonth() === mo - 1 && dt.getDate() === d) ? isoOf(dt) : null;
+    }
+    function inRange(inp, iso) {
+        var min = inp.getAttribute('min'), max = inp.getAttribute('max');
+        return (!min || iso >= min) && (!max || iso <= max);
+    }
+    function setDate(inp, iso) {                               // new value + the events a real date box would fire
+        var old = inValue.get.call(inp);
+        inp.value = iso;
+        if (old !== iso) {
+            inp.dispatchEvent(new Event('input', { bubbles: true }));
+            inp.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    }
+
+    function enhanceDate(inp) {
+        if (inp.hasAttribute('data-sd-dmy') || inp.hasAttribute('data-native') || inp.closest('[data-native]')) return;
+        var box = document.createElement('input');
+        box.type = 'text';
+        box.className = (inp.className + ' sd-dmy').trim();
+        box.placeholder = 'DD/MM/YYYY';
+        box.autocomplete = 'off';
+        box.inputMode = 'numeric';
+        box.maxLength = 10;
+        if (inp.title) box.title = inp.title;
+        if (inp.style.cssText) box.style.cssText = inp.style.cssText;
+        box.disabled = inp.disabled; box.readOnly = inp.readOnly; box.required = inp.required;
+        var lbl = inp.labels && inp.labels[0];                  // read before the type changes (hidden inputs have no label)
+        box.setAttribute('aria-label', inp.getAttribute('aria-label') || (lbl ? lbl.textContent.trim() : 'Date') + ' (DD/MM/YYYY)');
+        if (lbl) lbl.addEventListener('click', function (e) { e.preventDefault(); box.focus(); });
+
+        inp.setAttribute('data-sd-dmy', '1');
+        inp.required = false;
+        inp.type = 'hidden';
+        inp.after(box);
+        inp._sdBox = box; box._sdInput = inp;
+        Object.defineProperty(inp, 'value', {
+            configurable: true,
+            get: function () { return inValue.get.call(this); },
+            set: function (v) { inValue.set.call(this, v); box.value = dmyOfIso(inValue.get.call(this)); }
+        });
+        box.value = dmyOfIso(inValue.get.call(inp));
+
+        function take() {                                       // typed text -> value (wrong text: message + old value back)
+            var t = box.value.trim();
+            if (!t) { setDate(inp, ''); return true; }
+            var iso = isoOfDmy(t);
+            if (!iso || !inRange(inp, iso)) {
+                SD.toast(iso ? 'This date is not allowed here.' : 'Enter the date as DD/MM/YYYY (e.g. 25/12/2026).', true);
+                box.value = dmyOfIso(inValue.get.call(inp));
+                return false;
+            }
+            setDate(inp, iso);
+            return true;
+        }
+        box.addEventListener('input', function (e) {           // 25122026 -> 25/12/2026 while typing
+            if (!e.inputType || e.inputType.indexOf('insert') !== 0) return;
+            var v = box.value;
+            if (/^\d{2}$/.test(v) || /^\d{1,2}[\/\-.]\d{2}$/.test(v)) box.value = v + '/';
+            else if (/^\d{8}$/.test(v)) box.value = v.slice(0, 2) + '/' + v.slice(2, 4) + '/' + v.slice(4);
+        });
+        box.addEventListener('change', take);
+        box.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') { if (!take()) e.preventDefault(); closeCal(); }
+            else if (e.key === 'ArrowDown' || (e.key === 'Down')) { e.preventDefault(); openCal(box); }
+            else if (e.key === 'Escape' || e.key === 'Tab') closeCal();
+        });
+        box.addEventListener('click', function () { openCal(box); });
+    }
+
+    // one small calendar for all date boxes
+    var cal = null, calBox = null, calMonth = null;
+    function buildCal() {
+        cal = document.createElement('div');
+        cal.className = 'sd-cal';
+        cal.setAttribute('data-native', '');                     // its month / year lists stay normal drop downs
+        cal.addEventListener('mousedown', function (e) { if (!e.target.closest('select')) e.preventDefault(); });   // keep the focus in the box
+        cal.addEventListener('click', function (e) {
+            var b = e.target.closest('button'); if (!b || !calBox) return;
+            var inp = calBox._sdInput;
+            if (b.dataset.nav) { calMonth.setMonth(calMonth.getMonth() + Number(b.dataset.nav)); drawCal(); return; }
+            if (b.dataset.day) { setDate(inp, b.dataset.day); closeCal(); calBox && calBox.focus(); return; }
+            if (b.dataset.act === 'today') { var t = isoOf(new Date()); if (inRange(inp, t)) setDate(inp, t); closeCal(); return; }
+            if (b.dataset.act === 'clear') { setDate(inp, ''); closeCal(); return; }
+            if (b.dataset.act === 'close') closeCal();
+        });
+        cal.addEventListener('change', function (e) {
+            if (e.target.matches('.sd-cal-m')) calMonth.setMonth(Number(e.target.value));
+            if (e.target.matches('.sd-cal-y')) calMonth.setFullYear(Number(e.target.value));
+            drawCal();
+        });
+        document.body.appendChild(cal);
+        document.addEventListener('mousedown', function (e) {
+            if (cal.classList.contains('show') && !cal.contains(e.target) && e.target !== calBox) closeCal();
+        }, true);
+        window.addEventListener('resize', function () { if (cal.classList.contains('show')) placeCal(); });   // phone keyboard opens -> resize
+        window.addEventListener('scroll', function (e) { if (cal.classList.contains('show') && !cal.contains(e.target)) placeCal(); }, true);
+    }
+    function drawCal() {
+        var inp = calBox._sdInput, sel = inValue.get.call(inp), today = isoOf(new Date());
+        var y = calMonth.getFullYear(), m = calMonth.getMonth();
+        var first = new Date(y, m, 1), start = new Date(y, m, 1 - first.getDay());          // weeks start on Sunday
+        var years = '';
+        for (var yy = y - 60; yy <= y + 15; yy++) years += '<option value="' + yy + '"' + (yy === y ? ' selected' : '') + '>' + yy + '</option>';
+        var html = '<div class="sd-cal-head">' +
+            '<button type="button" data-nav="-1" title="Previous month" aria-label="Previous month">&lsaquo;</button>' +
+            '<select class="sd-cal-m" aria-label="Month">' + MONTHS.map(function (n, i) { return '<option value="' + i + '"' + (i === m ? ' selected' : '') + '>' + n + '</option>'; }).join('') + '</select>' +
+            '<select class="sd-cal-y" aria-label="Year">' + years + '</select>' +
+            '<button type="button" data-nav="1" title="Next month" aria-label="Next month">&rsaquo;</button></div>' +
+            '<div class="sd-cal-grid">' + ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(function (d) { return '<span class="wd">' + d + '</span>'; }).join('');
+        for (var i = 0; i < 42; i++) {
+            var d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i), iso = isoOf(d);
+            var cls = (d.getMonth() !== m ? 'out ' : '') + (iso === today ? 'today ' : '') + (iso === sel ? 'sel' : '');
+            html += '<button type="button" data-day="' + iso + '" class="' + cls.trim() + '"' + (inRange(inp, iso) ? '' : ' disabled') +
+                ' aria-label="' + pad2(d.getDate()) + '/' + pad2(d.getMonth() + 1) + '/' + d.getFullYear() + '">' + d.getDate() + '</button>';
+        }
+        html += '</div><div class="sd-cal-foot"><button type="button" data-act="today">Today</button>' +
+            '<button type="button" data-act="clear">Clear</button><button type="button" data-act="close">Close</button></div>';
+        cal.innerHTML = html;
+    }
+    function placeCal() {
+        if (!calBox || !calBox.isConnected) { closeCal(); return; }
+        var r = calBox.getBoundingClientRect(), w = cal.offsetWidth, h = cal.offsetHeight;
+        var top = (r.bottom + 4 + h > window.innerHeight && r.top - 4 - h > 0) ? r.top - 4 - h : r.bottom + 4;
+        cal.style.top = top + 'px';
+        cal.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + 'px';
+    }
+    function openCal(box) {
+        if (box.disabled || box.readOnly) return;
+        if (!cal) buildCal();
+        calBox = box;
+        var cur = dateOfIso(inValue.get.call(box._sdInput)) || new Date();
+        calMonth = new Date(cur.getFullYear(), cur.getMonth(), 1);
+        drawCal();
+        cal.classList.add('show');
+        placeCal();
+    }
+    function closeCal() { if (cal) cal.classList.remove('show'); calBox = null; }
+
+    // ---------- run on the page + on everything added later ----------
+    function enhance(root) {
+        root = root || document;
+        if (!root.querySelectorAll) return;
+        root.querySelectorAll('input[type="date"]').forEach(enhanceDate);
+        root.querySelectorAll('select').forEach(enhanceSelect);
+    }
+    SD.enhance = enhance;
+    var enhanceTimer = null;
+    function enhanceSoon() { clearTimeout(enhanceTimer); enhanceTimer = setTimeout(function () { enhance(document); }, 0); }   // after the page's own scripts
+    document.addEventListener('DOMContentLoaded', function () {
+        enhanceSoon();
+        if (window.MutationObserver) {
+            new MutationObserver(function (list) {
+                for (var i = 0; i < list.length; i++) {
+                    for (var j = 0; j < list[i].addedNodes.length; j++) {
+                        var n = list[i].addedNodes[j];
+                        if (n.nodeType === 1 && (n.matches('select, input[type="date"]') || n.querySelector('select, input[type="date"]'))) { enhanceSoon(); return; }
+                    }
+                }
+            }).observe(document.body, { childList: true, subtree: true });
+        }
+    });
 })();
+
+//         =================    09/11/2026  ==========================
+
+/* ===== [10] SIDEBAR STATE (append at the END of wwwroot/js/app-standard.js, after adminlte.js is loaded) =====
+   WHY: AdminLTE runs "init()" on EVERY page load and on EVERY window resize:
+        desktop -> it forces the sidebar open, mobile -> it forces it closed.
+        So the user's choice was lost on each click/navigation, and on phones even a scroll (address-bar resize) closed it.
+   NOW: the sidebar changes ONLY when the user clicks the toggle button (or the dark overlay on a phone).
+        The choice is remembered (localStorage) and re-applied right after AdminLTE's own init.             */
+(function () {
+    'use strict';
+    var KEY = 'sdSidebarCollapsed';        // desktop choice: '1' collapsed, '0' expanded
+    var MKEY = 'sdSidebarMobileOpen';      // phone choice (sessionStorage)
+    var BP = 992;                          // AdminLTE sidebar-expand-lg breakpoint
+    var KEEP_OPEN_ON_MOBILE = false;       // true = phone drawer stays open after a click/navigation too
+    var body = document.body;
+
+    function lsGet(s, k) { try { return s.getItem(k); } catch (e) { return null; } }
+    function lsSet(s, k, v) { try { s.setItem(k, v); } catch (e) { } }
+    function isDesktop() { return window.innerWidth > BP; }
+    function isCollapsed() { return body.classList.contains('sidebar-collapse'); }
+    function apply(collapsed) {
+        body.classList.toggle('sidebar-collapse', collapsed);
+        body.classList.toggle('sidebar-open', !collapsed);
+    }
+    var lastW = window.innerWidth;
+    var mobileOpen = KEEP_OPEN_ON_MOBILE && lsGet(sessionStorage, MKEY) === '1';
+
+    function sync(widthChanged) {
+        if (isDesktop()) apply(lsGet(localStorage, KEY) === '1');
+        else if (widthChanged) { apply(!mobileOpen); }       // crossing the breakpoint
+        else apply(!mobileOpen);                              // height-only resize (phone address bar) -> keep as is
+    }
+    function remember() {                                      // called AFTER a manual toggle
+        if (isDesktop()) lsSet(localStorage, KEY, isCollapsed() ? '1' : '0');
+        else { mobileOpen = !isCollapsed(); if (KEEP_OPEN_ON_MOBILE) lsSet(sessionStorage, MKEY, mobileOpen ? '1' : '0'); }
+    }
+
+    /* keep the active menu item highlighted even if the server could not match the url (virtual directory, trailing slash) */
+    function norm(p) { p = (p || '/').toLowerCase(); return p.length > 1 ? p.replace(/\/+$/, '') : p; }
+    function markActive() {
+        var menu = document.querySelector('.app-sidebar .sidebar-menu');
+        if (!menu || menu.querySelector('.nav-link.active')) return;
+        var cur = norm(location.pathname), hit = null;
+        menu.querySelectorAll('a.nav-link[href]').forEach(function (a) {
+            var h = a.getAttribute('href');
+            if (!h || h === '#' || h.indexOf('javascript') === 0) return;
+            try { if (norm(new URL(a.href, location.href).pathname) === cur) hit = a; } catch (e) { }
+        });
+        if (!hit) return;
+        hit.classList.add('active');
+        var sub = hit.closest('.nav-treeview');
+        if (sub) {
+            var parent = sub.closest('.nav-item');
+            parent.classList.add('menu-open');
+            var pl = parent.querySelector(':scope > .nav-link'); if (pl) pl.classList.add('active');
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {   // registered AFTER AdminLTE's own handlers -> runs after them
+        sync(false);
+        markActive();
+        window.addEventListener('resize', function () {           // registered AFTER AdminLTE's resize handler
+            var changed = window.innerWidth !== lastW; lastW = window.innerWidth;
+            sync(changed);
+        });
+        document.addEventListener('click', function (e) {         // manual toggle button / phone overlay only
+            if (e.target.closest('[data-lte-toggle="sidebar"]') || e.target.closest('.sidebar-overlay')) remember();
+        });
+        document.addEventListener('touchend', function (e) {
+            if (e.target.closest('.sidebar-overlay')) setTimeout(remember, 0);
+        }, { passive: true });
+    });
+})();
+

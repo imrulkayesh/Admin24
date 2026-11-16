@@ -1,0 +1,166 @@
+@* Views/Dispatch/Receive.cshtml  (old YA: Pages/Dispatch/Receive.aspx)
+   LIST PAGE - standard look (app-standard.css / app-standard.js: SD.initList, SD.confirm, SD.post).
+   Tabs: Waiting to Receive (I am the receiver: Receive / view)
+         Waiting to Return  (I am the sender of a returnable item: Return / Direct Return / view). *@
+@model AlphaCare.Models.DispatchReceiveViewModel
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = $"({Model.ToReceive.Count}) Receive Dispatch";
+
+    var sections = new[]
+    {
+        (Id: "receive", Title: "Waiting to Receive", Icon: "fa-inbox",          Color: "#2563eb", Rows: Model.ToReceive),
+        (Id: "return",  Title: "Waiting to Return",  Icon: "fa-arrow-rotate-left", Color: "#d97706", Rows: Model.ToReturn)
+    };
+}
+
+<div class="sd-page" data-smart-page>
+    <div class="card shadow-sm border-0">
+
+        <div class="sd-head">
+            <h5 class="mb-0"><i class="fas fa-hand-holding me-2"></i>Receive Dispatch</h5>
+            <span class="sd-date"><i class="far fa-calendar me-1"></i>@DateTime.Today.ToString("dddd, dd MMMM yyyy")</span>
+        </div>
+
+        <div class="card-body">
+            @Html.AntiForgeryToken()
+
+            <div class="sd-tabs mb-3">
+                @for (int i = 0; i < sections.Length; i++)
+                {
+                    var sec = sections[i];
+                    <button type="button" class="sd-tab @(i == 0 ? "active" : "")" data-pane="@sec.Id" style="--c:@sec.Color">
+                        <i class="fas @sec.Icon"></i> @sec.Title <span class="cnt">@sec.Rows.Count</span>
+                    </button>
+                }
+            </div>
+
+            <div class="sd-tools">
+                <div class="input-group grow">
+                    <span class="input-group-text bg-white"><i class="fas fa-magnifying-glass text-muted"></i></span>
+                    <input type="text" class="form-control" id="sdSearch" placeholder="Search dispatch id, sender, receiver, mobile, location..." autocomplete="off" />
+                </div>
+                <div class="input-group" style="max-width:210px">
+                    <span class="input-group-text bg-white"><i class="far fa-calendar text-muted"></i></span>
+                    <input type="date" class="form-control" id="sdDate" title="Show one date only" />
+                </div>
+                <button type="button" class="sd-link" id="sdClear" style="display:none"><i class="fas fa-xmark me-1"></i>Clear filters</button>
+                <button type="button" class="sd-link" id="sdResetSort" style="display:none"><i class="fas fa-arrow-rotate-left me-1"></i>Default order</button>
+            </div>
+
+            @for (int s = 0; s < sections.Length; s++)
+            {
+                var sec = sections[s];
+                <div class="sd-pane @(s == 0 ? "active" : "")" id="pane-@sec.Id">
+                    <div class="sd-wrap table-responsive">
+                        <table class="sd-table">
+                            <thead>
+                                <tr>
+                                    <th class="text-center">Action</th>
+                                    <th class="sortable" data-sort="tx">Dispatch ID<i class="fas fa-sort arr"></i></th>
+                                    <th class="sortable" data-sort="date">Date<i class="fas fa-sort arr"></i></th>
+                                    <th class="sortable" data-sort="type">Issue Type<i class="fas fa-sort arr"></i></th>
+                                    <th class="sortable" data-sort="sender">Sender<i class="fas fa-sort arr"></i></th>
+                                    <th class="sortable" data-sort="rec">Receiver<i class="fas fa-sort arr"></i></th>
+                                    <th>Mobile</th>
+                                    <th>Location</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @{
+                                    int idx = 0;
+                                }
+                                @foreach (var r in sec.Rows)
+                                {
+                                    string place = $"{r.RECEIVERDEPARTMENT}-{r.BUSINESSCENTER}" + (string.IsNullOrWhiteSpace(r.RECEIVERADDRESS) ? "" : ". " + r.RECEIVERADDRESS);
+                                    string search = $"{r.TRANSACTIONID} {r.ISSUETYPENAME} {r.EMPLOYEENAME} {r.RECEIVERNAME} {r.RECEIVERMOBILE} {place}".ToLower();
+                                    <tr data-search="@search" data-id="@r.ID" data-title="@r.TRANSACTIONID" data-i="@(idx++)"
+                                        data-date="@(r.CREATEDATE?.ToString("yyyy-MM-dd"))"
+                                        data-k-tx="@((r.TRANSACTIONID ?? "").ToLower())" data-k-date="@(r.CREATEDATE?.Ticks ?? 0)"
+                                        data-k-type="@((r.ISSUETYPENAME ?? "").ToLower())"
+                                        data-k-sender="@((r.EMPLOYEENAME ?? "").ToLower())" data-k-rec="@((r.RECEIVERNAME ?? "").ToLower())">
+
+                                        <td class="text-center text-nowrap" data-label="Action">
+                                            <div class="sd-cell">
+                                                @if (sec.Id == "receive")
+                                                {
+                                                    <button type="button" class="sd-btn ok" title="Receive" data-act="receive"><i class="fas fa-check"></i></button>
+                                                }
+                                                else
+                                                {
+                                                    <button type="button" class="sd-btn" title="Return (through the dispatch desks)" data-act="return"><i class="fas fa-arrow-rotate-left"></i></button>
+                                                    <button type="button" class="sd-btn" title="Direct Return" data-act="direct"><i class="fas fa-reply"></i></button>
+                                                }
+                                                <a class="sd-btn" title="View Details" href="@Url.Action("ViewDispatch", "Dispatch", new { id = r.ID })"><i class="fas fa-eye"></i></a>
+                                            </div>
+                                        </td>
+                                        <td data-label="Dispatch ID" class="text-nowrap"><div class="sd-cell"><a class="sd-title" href="@Url.Action("ViewDispatch", "Dispatch", new { id = r.ID })">@r.TRANSACTIONID</a></div></td>
+                                        <td data-label="Date" class="text-nowrap"><div class="sd-cell">@(r.CREATEDATE?.ToString("dd/MM/yyyy hh:mm tt") ?? "-")</div></td>
+                                        <td data-label="Issue Type"><div class="sd-cell">@r.ISSUETYPENAME</div></td>
+                                        <td data-label="Sender"><div class="sd-cell">@r.EMPLOYEENAME</div></td>
+                                        <td data-label="Receiver"><div class="sd-cell">@(string.IsNullOrWhiteSpace(r.RECEIVERNAME) ? "-" : r.RECEIVERNAME)</div></td>
+                                        <td data-label="Mobile" class="text-nowrap">
+                                            <div class="sd-cell">
+                                                @if (!string.IsNullOrWhiteSpace(r.RECEIVERMOBILE))
+                                                {
+                                                    <a class="text-decoration-none" href="tel:@r.RECEIVERMOBILE"><i class="fas fa-phone me-1"></i>@r.RECEIVERMOBILE</a>
+                                                }
+                                                else
+                                                {
+                                                    <span>-</span>
+                                                }
+                                            </div>
+                                        </td>
+                                        <td data-label="Location"><div class="sd-cell">@place</div></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="sd-empty" data-empty="all" style="@(sec.Rows.Count == 0 ? "" : "display:none")">
+                        <i class="far fa-folder-open"></i> No dispatch in "@sec.Title".
+                    </div>
+                    <div class="sd-empty" data-empty="filter" style="display:none">
+                        <i class="fas fa-filter-circle-xmark"></i> No dispatch matched your filter.
+                    </div>
+                </div>
+            }
+
+            <div class="small text-muted mt-2">
+                <b>Return</b> sends the item back through the dispatch desks. <b>Direct Return</b> sends it straight back to the sender.
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            SD.initList();
+
+            var U = { receive: '@Url.Action("MyReceive", "Dispatch")', ret: '@Url.Action("ReturnDispatch", "Dispatch")' };
+            var O = {
+                receive: { title: 'Receive this dispatch?', tone: 'success', icon: 'fa-check', yesText: 'Receive',
+                           post: function (id, r) { return SD.post(U.receive, { id: id, remarks: r }); } },
+                'return': { title: 'Return this dispatch through the dispatch desks?', tone: 'success', icon: 'fa-arrow-rotate-left', yesText: 'Return',
+                           post: function (id, r) { return SD.post(U.ret, { id: id, direct: 0, remarks: r }); } },
+                direct: { title: 'Direct return this dispatch?', tone: 'success', icon: 'fa-reply', yesText: 'Direct Return',
+                           post: function (id, r) { return SD.post(U.ret, { id: id, direct: 1, remarks: r }); } }
+            };
+
+            document.querySelectorAll('.sd-btn[data-act]').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    var tr = b.closest('tr'), o = O[b.dataset.act];
+                    SD.confirm({
+                        title: o.title, text: tr.dataset.title, tone: o.tone, icon: o.icon, yesText: o.yesText,
+                        reason: { label: 'Remarks (optional)', max: 100 },
+                        run: function (remarks) { return o.post(tr.dataset.id, remarks || ''); }
+                    }).then(function (res) {
+                        if (res && res.success) { SD.toast(res.message); setTimeout(function () { location.reload(); }, 900); }
+                    });
+                });
+            });
+        })();
+    </script>
+}

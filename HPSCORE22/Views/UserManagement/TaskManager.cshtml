@@ -1,0 +1,168 @@
+@* Views/UserManagement/TaskManager.cshtml (old YA: TaskManager.aspx)
+   Admin24's own menu entries (UC_TASKMANAGER_COPY): module, parent (Root = group header), titles, URL,
+   order, icon. Changing the module reloads parents + list (old AutoPostBack). *@
+@model AlphaCare.Models.TaskSetupViewModel
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = "Task Manager";
+}
+
+<div class="sd-page" data-smart-page>
+    <div class="card shadow-sm border-0">
+        <div class="sd-head">
+            <h5 class="mb-0"><i class="fas fa-list-check me-2"></i>Task Manager</h5>
+            <span class="sd-date"><i class="far fa-calendar me-1"></i>@DateTime.Today.ToString("dddd, dd MMMM yyyy")</span>
+        </div>
+
+        <div class="card-body">
+            <p class="text-muted small mb-2"><i class="fas fa-circle-info me-1"></i>These are Admin24's own menu entries. Parent "Root" makes a group header; a child with a URL becomes a page link. The legacy YA menu is not touched.</p>
+            @Html.AntiForgeryToken()
+
+            <form id="fm" class="row g-2 align-items-end mb-3" autocomplete="off">
+                <input type="hidden" id="fId" value="0" />
+                <div class="col-md-2">
+                    <label for="fModule" class="form-label fw-semibold">Module <span class="text-danger">*</span></label>
+                    <select id="fModule" class="form-select">
+                        @foreach (var o in Model.Modules) { <option value="@o.Value" selected="@(o.Value == Model.ModuleId.ToString())">@o.Text</option> }
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="fParent" class="form-label fw-semibold">Parent</label>
+                    <select id="fParent" class="form-select">
+                        <option value="0">Root</option>
+                        @foreach (var o in Model.Parents) { <option value="@o.Value">@o.Text</option> }
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="fTitleEng" class="form-label fw-semibold">Title (English) <span class="text-danger">*</span></label>
+                    <input type="text" id="fTitleEng" class="form-control" maxlength="100" />
+                </div>
+                <div class="col-md-2">
+                    <label for="fTitleBan" class="form-label fw-semibold">Title (Bangla)</label>
+                    <input type="text" id="fTitleBan" class="form-control" maxlength="100" />
+                </div>
+                <div class="col-md-2">
+                    <label for="fUrl" class="form-label fw-semibold">URL</label>
+                    <input type="text" id="fUrl" class="form-control" maxlength="150" placeholder="e.g. Admin/Country" />
+                </div>
+                <div class="col-md-1">
+                    <label for="fIcon" class="form-label fw-semibold">Icon</label>
+                    <input type="text" id="fIcon" class="form-control" maxlength="50" placeholder="fa-..." />
+                </div>
+                <div class="col-md-1">
+                    <label for="fOrder" class="form-label fw-semibold">Order</label>
+                    <input type="text" id="fOrder" class="form-control" inputmode="numeric" maxlength="5" value="0" />
+                </div>
+                <div class="col-md-auto d-flex gap-2">
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-floppy-disk me-1"></i><span id="fSaveText">Save</span></button>
+                    <button type="button" class="btn btn-outline-secondary" id="fReset"><i class="fas fa-rotate me-1"></i>Reset</button>
+                </div>
+            </form>
+
+            <div class="sd-tools">
+                <div class="input-group grow">
+                    <span class="input-group-text bg-white"><i class="fas fa-magnifying-glass text-muted"></i></span>
+                    <input type="text" class="form-control" id="sdSearch" placeholder="Search menu entry..." autocomplete="off" />
+                </div>
+                <button type="button" class="sd-link" id="sdClear" style="display:none"><i class="fas fa-xmark me-1"></i>Clear filters</button>
+                <button type="button" class="sd-link" id="sdResetSort" style="display:none"><i class="fas fa-arrow-rotate-left me-1"></i>Default order</button>
+            </div>
+
+            <div class="sd-pane active" id="pane-all" data-page-size="25">
+                <div class="sd-wrap table-responsive">
+                    <table class="sd-table">
+                        <thead>
+                            <tr>
+                                <th class="text-center">#</th>
+                                <th class="sortable" data-sort="eng">Title (Eng)<i class="fas fa-sort arr"></i></th>
+                                <th>Title (Ban)</th>
+                                <th class="sortable" data-sort="url">URL<i class="fas fa-sort arr"></i></th>
+                                <th>Parent</th>
+                                <th class="sortable text-end" data-sort="order">Order<i class="fas fa-sort arr"></i></th>
+                                <th>Icon</th><th class="text-center">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{
+                                var names = Model.Rows.ToDictionary(r => r.ID, r => r.TEXTENG ?? "");
+                            }
+                            @for (int i = 0; i < Model.Rows.Count; i++)
+                            {
+                                var r = Model.Rows[i];
+                                string parentName = r.PARENTID == 0 ? "Root" : names.TryGetValue(r.PARENTID, out string? pn) ? pn : r.PARENTID.ToString();
+                                <tr data-search="@(((r.TEXTENG ?? "") + " " + (r.URL ?? "")).ToLower())" data-i="@i"
+                                    data-id="@r.ID" data-eng="@r.TEXTENG" data-ban="@r.TEXTBAN" data-url="@r.URL"
+                                    data-parent="@r.PARENTID" data-order="@r.ORDERCOLUMN" data-icon="@r.ICON" data-module="@r.MODULEID"
+                                    data-k-eng="@((r.TEXTENG ?? "").ToLower())" data-k-url="@((r.URL ?? "").ToLower())" data-k-order="@r.ORDERCOLUMN">
+                                    <td class="text-center text-muted" data-label="#"><div class="sd-cell">@(i + 1)</div></td>
+                                    <td data-label="Title (Eng)"><div class="sd-cell">@r.TEXTENG</div></td>
+                                    <td data-label="Title (Ban)"><div class="sd-cell">@(r.TEXTBAN ?? "-")</div></td>
+                                    <td data-label="URL"><div class="sd-cell">@(string.IsNullOrEmpty(r.URL) ? "-" : r.URL)</div></td>
+                                    <td data-label="Parent"><div class="sd-cell">@parentName</div></td>
+                                    <td class="text-end" data-label="Order"><div class="sd-cell">@r.ORDERCOLUMN</div></td>
+                                    <td data-label="Icon"><div class="sd-cell">@(string.IsNullOrEmpty(r.ICON) ? "-" : r.ICON)</div></td>
+                                    <td class="text-center" data-label="Action">
+                                        <div class="sd-cell d-inline-flex gap-1">
+                                            <button type="button" class="sd-btn" title="Edit" data-act="edit"><i class="fas fa-pen"></i></button>
+                                            <button type="button" class="sd-btn" title="Delete" data-act="del"><i class="fas fa-trash"></i></button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="sd-empty" data-empty="all" style="@(Model.Rows.Count == 0 ? "" : "display:none")"><i class="far fa-folder-open"></i> No menu entry yet.</div>
+                <div class="sd-empty" data-empty="filter" style="display:none"><i class="fas fa-filter-circle-xmark"></i> No entry matched your search.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            SD.initList();
+            var byId = function (id) { return document.getElementById(id); };
+            var pageUrl = '@Url.Action("TaskManager", "UserManagement")';
+
+            byId('fModule').addEventListener('change', function () { location.href = pageUrl + '?moduleId=' + byId('fModule').value; });
+
+            function reset() {
+                byId('fId').value = '0';
+                ['fTitleEng', 'fTitleBan', 'fUrl', 'fIcon'].forEach(function (id) { byId(id).value = ''; });
+                byId('fOrder').value = '0'; byId('fParent').value = '0'; byId('fSaveText').textContent = 'Save';
+            }
+            document.querySelectorAll('.sd-btn[data-act="edit"]').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    var d = b.closest('tr').dataset;
+                    byId('fId').value = d.id; byId('fTitleEng').value = d.eng || ''; byId('fTitleBan').value = d.ban || '';
+                    byId('fUrl').value = d.url || ''; byId('fIcon').value = d.icon || ''; byId('fOrder').value = d.order || '0';
+                    byId('fParent').value = d.parent;
+                    if (!byId('fParent').value) byId('fParent').value = '0';
+                    byId('fSaveText').textContent = 'Update'; byId('fTitleEng').focus(); window.scrollTo({ top: 0, behavior: 'smooth' });
+                });
+            });
+            document.querySelectorAll('.sd-btn[data-act="del"]').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    SD.confirm({
+                        title: 'Delete this menu entry?', text: b.closest('tr').dataset.eng, tone: 'danger', icon: 'fa-trash', yesText: 'Delete',
+                        run: function () { return SD.post('@Url.Action("DeleteTask", "UserManagement")', { id: b.closest('tr').dataset.id }); }
+                    }).then(function (res) { if (res && res.success) { SD.toast(res.message); setTimeout(function () { location.reload(); }, 700); } });
+                });
+            });
+            byId('fReset').addEventListener('click', reset);
+            byId('fm').addEventListener('submit', function (e) {
+                e.preventDefault();
+                if (!byId('fTitleEng').value.trim()) { SD.toast('Enter the Title (English).', true); return; }
+                SD.post('@Url.Action("SaveTask", "UserManagement")', {
+                    id: byId('fId').value, titleEng: byId('fTitleEng').value.trim(), titleBan: byId('fTitleBan').value.trim(),
+                    url: byId('fUrl').value.trim(), parentId: byId('fParent').value, order: byId('fOrder').value || 0,
+                    icon: byId('fIcon').value.trim(), moduleId: byId('fModule').value
+                }).then(function (res) { SD.toast(res.message, !res.success); if (res.success) setTimeout(function () { location.reload(); }, 800); })
+                  .catch(function () { SD.toast('Server error. Please try again.', true); });
+            });
+        })();
+    </script>
+}

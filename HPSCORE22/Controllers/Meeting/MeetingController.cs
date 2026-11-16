@@ -547,12 +547,18 @@ namespace QCMS.Controllers
             }
         }
 
-        // full link for the mail: App:BaseUrl from appsettings.json (recommended), otherwise the current request
+        // full link for the mail: App:BaseUrl from appsettings.json (carries the full app root,
+        // e.g. https://pmc.prangroup.com/admin24), otherwise the current request. Url.Action already
+        // prepends Request.PathBase, so that prefix is cut before the configured base is put in front.
         private string AbsoluteUrl(string action)
         {
             string path = Url.Action(action, "Meeting") ?? "/";
+            string pathBase = Request.PathBase.Value ?? "";
+            if (pathBase.Length > 0 && path.StartsWith(pathBase, StringComparison.OrdinalIgnoreCase))
+                path = path.Substring(pathBase.Length);
+            if (!path.StartsWith('/')) path = "/" + path;
             string baseUrl = (_config["App:BaseUrl"] ?? "").Trim().TrimEnd('/');
-            if (string.IsNullOrEmpty(baseUrl)) baseUrl = $"{Request.Scheme}://{Request.Host}";
+            if (string.IsNullOrEmpty(baseUrl)) baseUrl = $"{Request.Scheme}://{Request.Host}{pathBase}";
             return baseUrl + path;
         }
 

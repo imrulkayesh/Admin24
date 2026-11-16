@@ -1,0 +1,147 @@
+@* Views/Dispatch/GateEntryDetails.cshtml  (old YA: Pages/Dispatch/GateEntryView.aspx + GateEntryDetails.aspx)
+   One visitor gate entry: host, visitor, items. Print = the gate pass with barcode (old GatentryPrint.aspx).
+   The host can mark a returnable sample as returned here too (old MyVisitors btnReturn). *@
+@model AlphaCare.Models.GateEntryDetailsViewModel
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    var e = Model.Entry;
+    bool saved = ViewData["Saved"] is true;
+    string when(DateTime? d) => d?.ToString("dd/MM/yyyy hh:mm tt") ?? "-";
+}
+
+<style>
+    .dv-box { border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; height: 100%; background: #fff; }
+    .dv-box h6 { font-weight: 700; color: #334155; margin-bottom: 10px; }
+    .dv-box h6 i { color: #4f46e5; }
+    .dv-row { display: flex; gap: 8px; padding: 3px 0; }
+    .dv-row b { min-width: 110px; color: #475569; font-weight: 600; }
+</style>
+
+<div class="container-fluid py-3" data-smart-page>
+    <div class="card shadow-sm border-0">
+        <div class="card-header bg-primary text-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <h5 class="mb-0"><i class="fas fa-id-card me-2"></i>Gate Entry <span class="fw-bold">@e.GATEENTRYID</span></h5>
+            <div class="d-flex flex-wrap gap-2">
+                <a class="btn btn-sm btn-warning" href="@Url.Action("GateEntryLabel", "Dispatch", new { id = e.ID })" target="_blank" rel="noopener"><i class="fas fa-print me-1"></i>Print Gate Pass</a>
+                @if (saved)
+                {
+                    <a class="btn btn-sm btn-light" href="@Url.Action("GateEntry", "Dispatch")"><i class="fas fa-plus me-1"></i>New Gate Entry</a>
+                }
+                else
+                {
+                    <button type="button" class="btn btn-sm btn-light" onclick="history.length > 1 ? history.back() : location.href='@Url.Action("MyVisitors", "Dispatch")'">
+                        <i class="fas fa-arrow-left me-1"></i>Back
+                    </button>
+                }
+            </div>
+        </div>
+
+        <div class="card-body">
+            @Html.AntiForgeryToken()
+            @if (saved)
+            {
+                <div class="alert alert-success py-2"><i class="fas fa-circle-check me-1"></i>Gate entry <b>@e.GATEENTRYID</b> saved. Print the gate pass for the visitor.</div>
+            }
+
+            <div class="row g-3 mb-3">
+                <div class="col-lg-4">
+                    <div class="dv-box">
+                        <h6><i class="fas fa-circle-info me-2"></i>Gate Entry</h6>
+                        <div class="dv-row"><b>Entry ID</b><span>@e.GATEENTRYID</span></div>
+                        <div class="dv-row"><b>In Time</b><span>@when(e.INDATETIME)</span></div>
+                        <div class="dv-row"><b>Gate</b><span>@(e.GATEPASSED == 1 ? $"Passed Gate# {e.GATENO} at {when(e.OUTDATETIME)}" : "Not passed yet")</span></div>
+                        <div class="dv-row"><b>Card#</b><span>@(string.IsNullOrWhiteSpace(e.VISTORCARDNO) ? "-" : e.VISTORCARDNO)</span></div>
+                        <div class="dv-row"><b>Entry By</b><span>@(e.CREATEDBYNAME ?? e.CREATEDBY)</span></div>
+                        @if (Model.Items.Any(i => i.ISPERSONAL == 1 && i.ISRETURNABLE == 1))
+                        {
+                            <div class="dv-row"><b>Sample</b><span>@(e.ISRETURNED == 1 ? "Returned" : "Not returned yet")</span></div>
+                        }
+                    </div>
+                </div>
+                <div class="col-lg-4">
+                    <div class="dv-box">
+                        <h6><i class="fas fa-user-check me-2"></i>To (host)</h6>
+                        <div class="dv-row"><b>Name</b><span>@e.EMPLOYEENAME (@e.STAFFID)</span></div>
+                        <div class="dv-row"><b>Department</b><span>@e.DEPARTMENTNAME</span></div>
+                        <div class="dv-row"><b>Location</b><span>@e.CENTERNAME</span></div>
+                        <div class="dv-row"><b>Mobile</b><span>@e.OFFICEMOBILE</span></div>
+                    </div>
+                </div>
+                <div class="col-lg-4">
+                    <div class="dv-box">
+                        <h6><i class="fas fa-user-tag me-2"></i>From (visitor)</h6>
+                        <div class="dv-row"><b>Name</b><span>@e.VISTORNAME</span></div>
+                        <div class="dv-row"><b>Mobile</b><span>@e.VISTORMOBILE</span></div>
+                        <div class="dv-row"><b>Address</b><span>@e.VISITORADDRESS</span></div>
+                        @if (!string.IsNullOrWhiteSpace(e.VISITORSTAFFID))
+                        {
+                            <div class="dv-row"><b>Staff ID</b><span>@e.VISITORSTAFFID</span></div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="dv-box mb-3">
+                <h6><i class="fas fa-boxes-stacked me-2"></i>Items</h6>
+                @if (Model.Items.Count == 0)
+                {
+                    <p class="text-muted mb-0">No item.</p>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light"><tr><th>SL#</th><th>Item</th><th>Quantity</th><th>Unit</th><th>Sample</th><th>Returnable</th><th>Remarks</th><th>Attachment</th></tr></thead>
+                            <tbody>
+                                @for (int i = 0; i < Model.Items.Count; i++)
+                                {
+                                    var it = Model.Items[i];
+                                    <tr>
+                                        <td>@(i + 1)</td>
+                                        <td>@it.ITEMNAME</td>
+                                        <td>@(it.QUANTITY?.ToString("0.##"))</td>
+                                        <td>@it.UNIT</td>
+                                        <td>@(it.ISPERSONAL == 1 ? "Yes" : "No")</td>
+                                        <td>@(it.ISRETURNABLE == 1 ? "Yes" : "No")</td>
+                                        <td>@it.REMARKS</td>
+                                        <td>
+                                            @if (!string.IsNullOrWhiteSpace(it.ATTACHMENTS))
+                                            {
+                                                <a href="@Url.Action("GateEntryAttachment", "Dispatch", new { id = it.ID })" target="_blank" rel="noopener"><i class="fas fa-paperclip me-1"></i>@it.ATTACHMENTS</a>
+                                            }
+                                            else
+                                            {
+                                                <span>-</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+
+            @if (Model.CanReturnSample)
+            {
+                <button type="button" class="btn btn-success" id="btnReturn" data-id="@e.ID" data-title="@e.GATEENTRYID"><i class="fas fa-arrow-rotate-left me-1"></i>Sample Returned</button>
+            }
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            var b = document.getElementById('btnReturn');
+            if (!b) return;
+            b.addEventListener('click', function () {
+                SD.confirm({
+                    title: 'Mark the sample as returned?', text: b.dataset.title, tone: 'success', icon: 'fa-arrow-rotate-left', yesText: 'Returned',
+                    run: function () { return SD.post('@Url.Action("ReturnSample", "Dispatch")', { id: b.dataset.id }); }
+                }).then(function (res) { if (res && res.success) { SD.toast(res.message); setTimeout(function () { location.reload(); }, 800); } });
+            });
+        })();
+    </script>
+}

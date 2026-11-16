@@ -1,0 +1,42 @@
+-- =====================================================================================================
+-- Admin + UserManagement migration - menu rows (Admin24's own menu tables)
+-- =====================================================================================================
+-- RUN THIS YOURSELF after review. Claude Code does not execute DML (CLAUDE_CODE_SECURITY_AUDIT.md).
+-- TEMPLATE ONLY: pick the MODULEID values (UC_MODULE_COPY) and ORDERCOLUMN values that fit your menu,
+-- then grant the pages to roles in UC_TASKPERMISSION_COPY. A super admin (UC_USERROLE.ROLEID = 1)
+-- can open every page even before these rows exist (same rule as the Dispatch pages).
+--
+-- The server-side permission check matches on the URL column, exactly as written below.
+--
+-- Suggested: one "Admin" module (or reuse an existing one) with two root groups.
+--
+-- ===== Admin module pages ============================================================================
+-- INSERT INTO UC_TASKMANAGER_COPY (ID, TEXTENG, TEXTBAN, URL, PARENTID, ORDERCOLUMN, ICON, MODULEID, ISACTIVE)
+-- SELECT NVL(MAX(ID),0)+1, 'Country',           'Country',           'Admin/Country',          <parent>, 10, 'fa-earth-asia',    <module>, 1 FROM UC_TASKMANAGER_COPY;
+-- ... same pattern for:
+--   'Division'          -> 'Admin/Division'           fa-map
+--   'District'          -> 'Admin/District'           fa-map-location
+--   'Thana'             -> 'Admin/Thana'              fa-map-pin
+--   'Location'          -> 'Admin/Location'           fa-location-dot  --not done
+--   'Business Center'   -> 'Admin/BusinessCenter'     fa-building
+--   'Group of Company'  -> 'Admin/GroupofCompany'     fa-building-flag  -- not done
+--   'Company'           -> 'Admin/Company'            fa-industry
+--   'Department'        -> 'Admin/Department'         fa-sitemap
+--   'Department Unit'   -> 'Admin/DepartmentUnit'     fa-diagram-project
+--   'Department Assign' -> 'Admin/DepartmentAssign'   fa-people-arrows
+--   'Designation'       -> 'Admin/Designation'        fa-id-badge
+--   'Gender'            -> 'Admin/Gender'             fa-venus-mars
+--   'Religion'          -> 'Admin/Religion'           fa-hands-praying
+--
+-- ===== UserManagement module pages ===================================================================
+--   'User Setup'         -> 'UserManagement/UserSetup'         fa-user-plus
+--   'User Status Update' -> 'UserManagement/UserStatusUpdate'  fa-user-check
+--   'User Role'          -> 'UserManagement/UserRole'          fa-user-shield
+--   'Role Setup'         -> 'UserManagement/RoleSetup'         fa-user-gear
+--   'Module'             -> 'UserManagement/Module'            fa-cubes
+--   'Task Manager'       -> 'UserManagement/TaskManager'       fa-list-check
+--   'Task Permission'    -> 'UserManagement/TaskPermission'    fa-key
+--   'Change Password'    -> 'UserManagement/ChangePassword'    fa-key --- not done
+--
+-- ===== permissions ===================================================================================
+-- INSERT INTO UC_TASKPERMISSION_COPY (TASKID, ROLEID) VALUES (<task id>, <role id>);   -- one per role/page

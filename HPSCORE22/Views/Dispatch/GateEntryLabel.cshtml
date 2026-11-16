@@ -1,0 +1,98 @@
+@* Views/Dispatch/GateEntryLabel.cshtml  (old YA: Pages/Dispatch/GatentryPrint.aspx)
+   Printable visitor gate pass: To (host) | From (visitor), CODE-128 barcode of the gate entry id, entry time, items.
+   Own page (no layout), opened in a new tab; it opens the print dialog by itself. *@
+@model AlphaCare.Models.GateEntryLabelViewModel
+@{
+    Layout = null;
+    var e = Model.Entry;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gate Pass @e.GATEENTRYID</title>
+    <style>
+        :root { color-scheme: light; }
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 16px; background: #fff; color: #000; font: 13px/1.4 Arial, Helvetica, sans-serif; }
+        .bar { display: flex; gap: 8px; margin-bottom: 16px; }
+        .bar button { padding: 6px 14px; border: 1px solid #94a3b8; border-radius: 6px; background: #f8fafc; cursor: pointer; font: inherit; }
+        .bar button.main { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+        h3 { margin: 0 0 8px; text-align: center; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+        td, th { border: 1px solid #999; padding: 4px 6px; text-align: left; vertical-align: top; }
+        th { background: #f1f5f9; }
+        .center { text-align: center; }
+        .code img { display: block; margin: 0 auto; width: 70%; max-width: 320px; height: 48px; }
+        .tx { font-weight: bold; letter-spacing: 1px; }
+        @@media print {
+            body { padding: 0; }
+            .bar { display: none; }
+            @@page { margin: 8mm; }
+        }
+    </style>
+</head>
+<body>
+    <div class="bar">
+        <button type="button" class="main" onclick="window.print()">Print</button>
+        <button type="button" onclick="window.close()">Close</button>
+    </div>
+
+    <h3>PRAN-RFL Group - Visitor Gate Pass</h3>
+    <table>
+        <tr><td></td><td class="center"><b>To</b></td><td class="center"><b>From</b></td></tr>
+        <tr><td>Name</td><td>@e.EMPLOYEENAME</td><td>@e.VISTORNAME</td></tr>
+        <tr><td>Mobile</td><td>@e.OFFICEMOBILE</td><td>@e.VISTORMOBILE</td></tr>
+        <tr><td>Address</td><td>@e.CENTERNAME-@e.DEPARTMENTCODE</td><td>@e.VISITORADDRESS</td></tr>
+        <tr>
+            <td>Barcode</td>
+            <td class="center code">
+                @if (Model.CodeImage.Length > 0)
+                {
+                    <img src="@Model.CodeImage" alt="Barcode @e.GATEENTRYID" />
+                }
+                <span class="tx">@e.GATEENTRYID</span>
+            </td>
+            <td>
+                Time: @(e.INDATETIME?.ToString("dd/MM/yyyy hh:mm tt"))<br />
+                TxnID: <span class="tx">@e.GATEENTRYID</span>
+                @if (!string.IsNullOrWhiteSpace(e.VISTORCARDNO))
+                {
+                    <text><br />Card#: @e.VISTORCARDNO</text>
+                }
+            </td>
+        </tr>
+    </table>
+
+    @if (Model.Items.Count > 0)
+    {
+        <table>
+            <thead><tr><th>Item</th><th>Quantity</th><th>Unit</th><th>Is Returnable</th><th>Sample</th><th>Remarks</th></tr></thead>
+            <tbody>
+                @foreach (var it in Model.Items)
+                {
+                    <tr>
+                        <td>@it.ITEMNAME</td>
+                        <td>@(it.QUANTITY?.ToString("0.##"))</td>
+                        <td>@it.UNIT</td>
+                        <td>@(it.ISRETURNABLE == 1 ? "YES" : "NO")</td>
+                        <td>@(it.ISPERSONAL == 1 ? "YES" : "NO")</td>
+                        <td>@it.REMARKS</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    <script>
+        (function () {
+            // wait for the barcode image before the print dialog opens
+            var img = document.querySelector('.code img');
+            if (!img || img.complete) { window.print(); return; }
+            img.addEventListener('load', function () { window.print(); });
+            img.addEventListener('error', function () { window.print(); });
+        })();
+    </script>
+</body>
+</html>

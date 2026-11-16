@@ -17,14 +17,19 @@ namespace AlphaCare.Controllers
         private readonly UserRepository _userRepository;
         private readonly ApiService _apiService;
         private readonly IModuleRepository _moduleRepository;
+        private readonly ILoginLogRepository _loginLog;        // USER_LOGIN_LOG (24/7 login activity tracking)
         private readonly ILogger<AccountsController> _logger;
 
+        // "Keep me signed in" ticked -> the login cookie lives this many days. Not ticked -> 30 minutes (sliding).
+        private const int RememberDays = 7;
+
         public AccountsController(UserRepository userRepository, ApiService apiService,
-            IModuleRepository moduleRepository, ILogger<AccountsController> logger)
+            IModuleRepository moduleRepository, ILoginLogRepository loginLog, ILogger<AccountsController> logger)
         {
             _userRepository = userRepository;
             _apiService = apiService;
             _moduleRepository = moduleRepository;
+            _loginLog = loginLog;
             _logger = logger;
         }
 
@@ -50,6 +55,11 @@ namespace AlphaCare.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Login(string Username, string Password, bool Remember = false, string? returnUrl = null)
         {
+            // USER_LOGIN_LOG: who tried, from where, with what (the password itself is never logged)
+            string? ip = LoginActivity.Ip(HttpContext);
+            string? ua = LoginActivity.UserAgent(HttpContext);
+            string? device = LoginActivity.Device(ua);
+
             try
             {
                 if (string.IsNullOrWhiteSpace(Username) || string.IsNullOrEmpty(Password))
@@ -62,11 +72,25 @@ namespace AlphaCare.Controllers
                 var hris = await _apiService.HrisLoginAsync(Username, Password);
 
                 if (!hris.Success || dt.Rows.Count == 0)
+                {
+                    // old Login.aspx.cs: on a failed login check UC_USERS for ISACTIVE=0 + INACTIVETYPE='Dispatch'
+                    // (account switched off by the Dispatch module) and show the specific message instead
+                    if (_userRepository.IsInactiveForDispatchGate(Username))
+                    {
+                        _loginLog.LogFailure(Username, "Inactive - Dispatch Gate check pending", ip, device, ua);
+                        return Json(new { success = false, message = "Your User ID is inactive because the Dispatch Gate check is pending." });
+                    }
+
+                    _loginLog.LogFailure(Username, "Invalid username or password", ip, device, ua);
                     return Json(new { success = false, message = "Invalid Username or Password." });
+                }
 
                 DataTable udt = _userRepository.GetEmployeeInfo(Username);
                 if (udt.Rows.Count == 0)
+                {
+                    _loginLog.LogFailure(Username, "Employee information not found", ip, device, ua);
                     return Json(new { success = false, message = "Employee information not found. Please contact Admin." });
+                }
 
                 HttpContext.Session.Clear();
 
@@ -76,16 +100,12 @@ namespace AlphaCare.Controllers
                 string staffId = udt.Rows[0]["STAFFID"].ToString() ?? "";
                 int roleId = Convert.ToInt32(dt.Rows[0]["ROLEID"]);
 
-                HttpContext.Session.SetString("USERID", userId);
-                HttpContext.Session.SetString("USERNAME", userName);
-                HttpContext.Session.SetString("UserFullName", fullName);
-                HttpContext.Session.SetString("STAFFID", staffId);
-                HttpContext.Session.SetInt32("RoleId", roleId);
-                HttpContext.Session.SetInt32("UserTypeID", roleId);          // kept for code that still reads UserTypeID
-                HttpContext.Session.SetInt32("BusinessCenterID", Convert.ToInt32(udt.Rows[0]["BUSINESSCENTERID"]));
-                HttpContext.Session.SetInt32("CompanyID", Convert.ToInt32(udt.Rows[0]["COMPANYID"]));
-                HttpContext.Session.SetInt32("DepartmentID", Convert.ToInt32(udt.Rows[0]["DEPARTMENTID"]));
-                HttpContext.Session.SetInt32("DesignationID", Convert.ToInt32(udt.Rows[0]["DESIGNATIONID"]));
+                LoginSession.Fill(HttpContext.Session, dt, udt);      // all session values (same code is used to restore them later)
+
+                // USER_LOGIN_LOG: open the row of this login; the id stays in the session so logout/expiry can close it
+                long loginLogId = _loginLog.LogSuccess(userId, userName, ip, device, ua, HttpContext.Session.Id);
+                if (loginLogId > 0)
+                    HttpContext.Session.SetString(LoginActivity.LogIdKey, loginLogId.ToString());
 
                 // ---- login cookie ----
                 var claims = new List<Claim>
@@ -94,7 +114,8 @@ namespace AlphaCare.Controllers
                     new Claim(ClaimTypes.NameIdentifier, userId),
                     new Claim("USERID", userId),
                     new Claim("STAFFID", staffId),
-                    new Claim("ROLEID", roleId.ToString())
+                    new Claim("ROLEID", roleId.ToString()),
+                    new Claim(LoginSession.RememberClaim, Remember ? "1" : "0")     // lets Program.cs restore the session later
                 };
                 var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
 
@@ -104,7 +125,7 @@ namespace AlphaCare.Controllers
                     new AuthenticationProperties
                     {
                         IsPersistent = Remember,
-                        ExpiresUtc = DateTimeOffset.UtcNow.AddMinutes(Remember ? 480 : 30)
+                        ExpiresUtc = Remember ? DateTimeOffset.UtcNow.AddDays(RememberDays) : DateTimeOffset.UtcNow.AddMinutes(30)
                     });
 
                 // ---- old: returnUrl handling (opens the module the returnUrl belongs to) ----
@@ -144,6 +165,7 @@ namespace AlphaCare.Controllers
             HttpContext.Session.SetString("ModuleName", module.MODULENAME ?? "");
             HttpContext.Session.SetString("ModuleIcon", module.ICON ?? "fa-folder");
             HttpContext.Session.SetString("ModuleMenu", JsonSerializer.Serialize(tree));
+            LoginSession.RememberModule(HttpContext, module.ID);
         }
 
         // =========================
@@ -152,7 +174,13 @@ namespace AlphaCare.Controllers
         [HttpGet]
         public async Task<IActionResult> Logout()
         {
+            // USER_LOGIN_LOG: close the row of this login (falls back to the user's newest open row
+            // when the session - and with it the stored id - is already gone)
+            long.TryParse(HttpContext.Session.GetString(LoginActivity.LogIdKey), out long loginLogId);
+            _loginLog.LogLogout(loginLogId, User.FindFirst("USERID")?.Value, "MANUAL");
+
             HttpContext.Session.Clear();
+            Response.Cookies.Delete(LoginSession.LastModuleCookie);
             await HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
             return RedirectToAction("Login");
         }

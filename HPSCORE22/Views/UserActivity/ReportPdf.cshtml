@@ -1,0 +1,77 @@
+@* Views/UserActivity/ReportPdf.cshtml - the PDF body of the user login report (Rotativa / wkhtmltopdf,
+   UserActivityController.Report?pdf=1). Self contained: no layout, inline CSS only. *@
+@model AlphaCare.Models.LoginReportViewModel
+@{
+    Layout = null;
+    var f = Model.Filter;
+    string text(object? v) => v switch
+    {
+        null => "-",
+        DateTime t => t.ToString("dd/MM/yyyy hh:mm tt"),
+        decimal m => m.ToString("0.##"),
+        double x => x.ToString("0.##"),
+        _ => (Convert.ToString(v) is { Length: > 0 } s ? s : "-")
+    };
+    var parts = new List<string>();
+    if (f.From.HasValue) parts.Add("From " + f.From.Value.ToString("dd/MM/yyyy"));
+    if (f.To.HasValue) parts.Add("To " + f.To.Value.ToString("dd/MM/yyyy"));
+    if (!string.IsNullOrEmpty(f.Username)) parts.Add("User: " + f.Username);
+    if (!string.IsNullOrEmpty(f.Ip)) parts.Add("IP: " + f.Ip);
+    if (!string.IsNullOrEmpty(f.Status)) parts.Add("Status: " + f.Status);
+}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>User Login Report</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 9px; color: #1e293b; margin: 0; }
+        h1 { font-size: 15px; margin: 0 0 2px; }
+        .sub { color: #64748b; margin-bottom: 10px; }
+        table { width: 100%; border-collapse: collapse; }
+        thead { display: table-header-group; }           /* repeat the header on every page */
+        th { background: #eef2ff; border: 1px solid #c7d2fe; padding: 3px 5px; text-align: left; font-size: 8.5px; }
+        td { border: 1px solid #e2e8f0; padding: 3px 5px; vertical-align: top; }
+        tr { page-break-inside: avoid; }
+        tr:nth-child(even) td { background: #f8fafc; }
+        .num { text-align: right; }
+        .failed { color: #b91c1c; font-weight: 600; }
+        .active { color: #15803d; font-weight: 600; }
+    </style>
+</head>
+<body>
+    <h1>User Login Report</h1>
+    <div class="sub">
+        @(parts.Count > 0 ? string.Join("  |  ", parts) : "All records")
+        &nbsp;&bull;&nbsp; @Model.Rows.Count row(s)
+        &nbsp;&bull;&nbsp; Generated @DateTime.Now.ToString("dd/MM/yyyy hh:mm tt")
+        @if (Model.Truncated) { <text>&nbsp;&bull;&nbsp; only the first @Model.MaxRows rows</text> }
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                @foreach (var col in Model.Columns)
+                {
+                    <th>@col.Header</th>
+                }
+            </tr>
+        </thead>
+        <tbody>
+            @for (int i = 0; i < Model.Rows.Count; i++)
+            {
+                var row = Model.Rows[i];
+                <tr>
+                    <td class="num">@(i + 1)</td>
+                    @foreach (var col in Model.Columns)
+                    {
+                        row.TryGetValue(col.Key, out var v);
+                        string t = text(v);
+                        <td class="@(col.Kind == "num" ? "num" : "") @(col.Key == "STATE" && t == "Failed" ? "failed" : "") @(col.Key == "STATE" && t == "Active" ? "active" : "")">@t</td>
+                    }
+                </tr>
+            }
+        </tbody>
+    </table>
+</body>
+</html>

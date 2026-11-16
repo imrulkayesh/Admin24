@@ -1,0 +1,479 @@
+@* Views/Dispatch/CreateDispatch.cshtml  (old YA: Pages/Dispatch/Dispatch.aspx + DispatchGlobal.aspx)
+   One open draft per user (DP_DISPATCH.ISOPEN = 1) collects the items. "Save" sends the dispatch for approval.
+   Items are added / changed / deleted at once (AJAX); Save posts the sender + receiver. *@
+@model AlphaCare.Models.CreateDispatchViewModel
+@using System.Text.Json
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = "Create Dispatch";
+
+    var initItems = Model.Items.Select(i => new
+    {
+        id = i.ID,
+        name = i.ITEMNAME,
+        quantity = i.QUANTITY,
+        unit = i.UNIT,
+        notes = i.NOTES,
+        attachment = string.IsNullOrWhiteSpace(i.ATTACHMENT) ? null : i.ATTACHMENT,
+        attachmentUrl = string.IsNullOrWhiteSpace(i.ATTACHMENT) ? null : Url.Action("Attachment", "Dispatch", new { id = i.ID })
+    });
+    var me = Model.Me;
+}
+
+<style>
+    .dp-box { border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; height: 100%; background: #fff; }
+    .dp-box h6 { font-weight: 700; color: #334155; margin-bottom: 12px; }
+    .dp-box h6 i { color: #4f46e5; }
+    .dp-items td, .dp-items th { vertical-align: middle; }
+    .dp-items input { min-width: 70px; }
+    .dp-hint { color: #64748b; font-size: 13px; }
+    .dp-panel { display: none; }
+    .dp-panel.show { display: block; }
+    .row.dp-panel.show { display: flex; }   /* receiver panels keep the same 2-column grid as Sender Details */
+    @@media (max-width: 767px) {
+        .dp-items thead { display: none; }
+        .dp-items tr { display: block; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 10px; padding: 6px; }
+        .dp-items td { display: flex; gap: 8px; align-items: center; border: 0; padding: 4px 6px; }
+        .dp-items td::before { content: attr(data-label); font-weight: 600; min-width: 80px; color: #475569; }
+    }
+</style>
+
+<div class="container-fluid py-3" data-smart-page>
+    <div class="card shadow-sm border-0">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-truck-fast me-2"></i>Create Dispatch</h5>
+            @* <a class="btn btn-sm btn-light" href="@Url.Action("Approval", "Dispatch")"><i class="fas fa-user-check me-1"></i>Approval</a> *@
+        </div>
+
+        <div class="card-body">
+            @Html.AntiForgeryToken()
+            <input type="hidden" id="DispatchId" value="@Model.DispatchId" />
+            <div id="dpMsg" class="alert d-none"></div>
+
+            <!-- ============ ISSUE TYPE ============ -->
+            <div class="row align-items-end mb-3">
+                <div class="col-md-5 mb-2">
+                    <label for="IssueTypeId" class="form-label fw-semibold">Issue Type <span class="text-danger">*</span></label>
+                    <select id="IssueTypeId" class="form-select">
+                        <option value="0">-- Select --</option>
+                        @foreach (var t in Model.IssueTypes)
+                        {
+                            <option value="@t.ID" data-ext="@t.ISEXTERNAL" data-per="@t.ISPERSONAL" data-ret="@t.RETURNABLE">@t.ISSUETYPENAME</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-3 mb-2">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="DirectSend" />
+                        <label class="form-check-label fw-semibold" for="DirectSend">Direct Send</label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-3 mb-3">
+                <!-- ============ SENDER ============ -->
+                <div class="col-lg-6">
+                    <div class="dp-box">
+                        <h6><i class="fas fa-user-tag me-2"></i>Sender Details</h6>
+                        <div class="row">
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label fw-semibold" for="sStaff">Staff ID <span class="text-danger">*</span></label>
+                                <input type="text" id="sStaff" class="form-control" list="dlEmp" autocomplete="off" placeholder="Type ID or name" value="@me?.STAFFID" />
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label fw-semibold" for="sCenter">Location <span class="text-danger">*</span></label>
+                                <select id="sCenter" class="form-select">
+                                    <option value="">-- Select --</option>
+                                    @foreach (var c in Model.BusinessCenters)
+                                    {
+                                        <option value="@c.ID" selected="@(me?.BUSINESSCENTERID == c.ID)">@c.CENTERNAME</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label fw-semibold" for="sDept">Department <span class="text-danger">*</span></label>
+                                <select id="sDept" class="form-select">
+                                    <option value="">-- Select --</option>
+                                    @foreach (var d in Model.Departments)
+                                    {
+                                        <option value="@d.ID" selected="@(me?.DEPARTMENTID == d.ID)">@d.DEPARTMENTNAME</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label fw-semibold" for="sEmp">Employee <span class="text-danger">*</span></label>
+                                <select id="sEmp" class="form-select"><option value="">-- Select --</option></select>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label fw-semibold" for="sName">Name <span class="text-danger">*</span></label>
+                                <input type="text" id="sName" class="form-control" maxlength="120" value="@me?.EMPLOYEENAME" />
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label fw-semibold" for="sMobile">Mobile</label>
+                                <input type="text" id="sMobile" class="form-control" maxlength="20" value="@me?.OFFICEMOBILE" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============ RECEIVER ============ -->
+                <div class="col-lg-6">
+                    <div class="dp-box">
+                        <h6><i class="fas fa-user-check me-2"></i>Receiver Details</h6>
+                        <p class="dp-hint mb-0" id="rNone">Select an Issue Type first.</p>
+                        <p class="dp-hint mb-0 dp-panel" id="rPersonal"><i class="fas fa-circle-info me-1"></i>Personal issue: the sender is the receiver.</p>
+
+                        <!-- internal receiver (old pnlInternal) -->
+                        <div class="row dp-panel" id="rInternal">
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label fw-semibold" for="rStaff">Staff ID</label>
+                                <input type="text" id="rStaff" class="form-control" list="dlEmp" autocomplete="off" placeholder="Type ID or name" />
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label fw-semibold" for="rCenter">Location <span class="text-danger">*</span></label>
+                                <select id="rCenter" class="form-select">
+                                    <option value="">-- Select --</option>
+                                    @foreach (var c in Model.BusinessCenters)
+                                    {
+                                        <option value="@c.ID">@c.CENTERNAME</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label fw-semibold" for="rDept">Department <span class="text-danger">*</span></label>
+                                <select id="rDept" class="form-select">
+                                    <option value="">-- Select --</option>
+                                    @foreach (var d in Model.Departments)
+                                    {
+                                        <option value="@d.ID">@d.DEPARTMENTNAME</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label fw-semibold" for="rEmp">Employee</label>
+                                <select id="rEmp" class="form-select"><option value="">-- Select --</option></select>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label fw-semibold" for="rName">Name <span class="text-danger">*</span></label>
+                                <input type="text" id="rName" class="form-control" maxlength="120" />
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label fw-semibold" for="rMobile">Mobile</label>
+                                <input type="text" id="rMobile" class="form-control" maxlength="20" />
+                            </div>
+                        </div>
+
+                        <!-- external receiver (old pnlExternal) -->
+                        <div class="row dp-panel" id="rExternal">
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label fw-semibold" for="xName">Receiver <span class="text-danger">*</span></label>
+                                <input type="text" id="xName" class="form-control" maxlength="120" />
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label fw-semibold" for="xMobile">Mobile</label>
+                                <input type="text" id="xMobile" class="form-control" maxlength="20" />
+                            </div>
+                            <div class="col-12 mb-2">
+                                <label class="form-label fw-semibold" for="xAddress">Address</label>
+                                <textarea id="xAddress" class="form-control" rows="2" maxlength="120"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <datalist id="dlEmp"></datalist>
+            <datalist id="dlItem"></datalist>
+
+            <!-- ============ ITEMS ============ -->
+            <div class="dp-box mb-3">
+                <h6><i class="fas fa-boxes-stacked me-2"></i>Item Details</h6>
+                <div class="row align-items-end">
+                    <div class="col-md-4 mb-2">
+                        <label class="form-label fw-semibold" for="iName">Item <span class="text-danger">*</span></label>
+                        <input type="text" id="iName" class="form-control" list="dlItem" maxlength="100" autocomplete="off" />
+                    </div>
+                    <div class="col-6 col-md-2 mb-2">
+                        <label class="form-label fw-semibold" for="iQty">Quantity <span class="text-danger">*</span></label>
+                        <input type="text" id="iQty" class="form-control" inputmode="decimal" value="1" />
+                    </div>
+                    <div class="col-6 col-md-2 mb-2">
+                        <label class="form-label fw-semibold" for="iUnit">Unit</label>
+                        <input type="text" id="iUnit" class="form-control" maxlength="50" />
+                    </div>
+                    <div class="col-md-4 mb-2">
+                        <label class="form-label fw-semibold" for="iNotes">Remarks</label>
+                        <input type="text" id="iNotes" class="form-control" maxlength="200" />
+                    </div>
+                    @if (Model.AttachmentsEnabled)
+                    {
+                        <div class="col-md-5 mb-2">
+                            <label class="form-label fw-semibold" for="iFile">Attachment <span class="dp-hint">(max 20 MB)</span></label>
+                            <input type="file" id="iFile" class="form-control" />
+                        </div>
+                        <div class="col-md-3 mb-2">
+                            <label class="form-label fw-semibold" for="iPhoto">or take a photo</label>
+                            <input type="file" id="iPhoto" class="form-control" accept="image/*" capture="environment" />
+                        </div>
+                    }
+                    <div class="col-md-4 mb-2 text-md-end">
+                        <button type="button" id="btnAddItem" class="btn btn-primary"><i class="fas fa-plus me-1"></i>Add Item</button>
+                    </div>
+                </div>
+
+                <div class="table-responsive mt-2">
+                    <table class="table table-sm table-hover dp-items mb-0">
+                        <thead class="table-light">
+                            <tr><th>SL#</th><th>Item</th><th style="width:110px">Quantity</th><th style="width:110px">Unit</th><th>Remarks</th><th>Attachment</th><th class="text-center">Action</th></tr>
+                        </thead>
+                        <tbody id="itemRows"></tbody>
+                    </table>
+                    <p class="dp-hint mt-2 mb-0" id="noItems">No item added yet.</p>
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="button" id="btnSave" class="btn btn-success"><i class="fas fa-paper-plane me-1"></i>Save</button>
+                <a href="@Url.Action("CreateDispatch", "Dispatch")" class="btn btn-outline-secondary"><i class="fas fa-rotate me-1"></i>Refresh</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============ WAITING FOR APPROVAL (old rptApproved = NewWaitingApprovalList) ============ -->
+    <div class="card shadow-sm border-0 mt-3">
+        <div class="card-header bg-white"><h6 class="mb-0 fw-bold"><i class="fas fa-hourglass-half me-2 text-warning"></i>Waiting for Approval <span class="badge bg-warning text-dark">@Model.Waiting.Count</span></h6></div>
+        <div class="card-body p-0">
+            @if (Model.Waiting.Count == 0)
+            {
+                <p class="dp-hint p-3 mb-0">No dispatch is waiting for approval.</p>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light">
+                            <tr><th>Dispatch ID</th><th>Date</th><th>Sender</th><th>Receiver</th><th>Mobile</th><th>Receiver Place</th><th>Created By</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var w in Model.Waiting)
+                            {
+                                <tr>
+                                    <td class="text-nowrap fw-semibold">@w.TRANSACTIONID</td>
+                                    <td class="text-nowrap">@(w.CREATEDATE?.ToString("dd/MM/yyyy hh:mm tt"))</td>
+                                    <td>@w.EMPLOYEENAME</td>
+                                    <td>@w.RECEIVERNAME</td>
+                                    <td>@w.RECEIVERMOBILE</td>
+                                    <td>@w.ReceiverPlace</td>
+                                    <td>@w.CREATEDUSER</td>
+                                    <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="@Url.Action("ViewDispatch", "Dispatch", new { id = w.ID })"><i class="fas fa-eye"></i></a></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            var U = {
+                emp: '@Url.Action("GetEmployee", "Dispatch")',
+                emps: '@Url.Action("GetEmployees", "Dispatch")',
+                searchEmp: '@Url.Action("SearchEmployee", "Dispatch")',
+                searchItem: '@Url.Action("SearchItem", "Dispatch")',
+                add: '@Url.Action("AddItem", "Dispatch")',
+                upd: '@Url.Action("UpdateItem", "Dispatch")',
+                del: '@Url.Action("DeleteItem", "Dispatch")',
+                save: '@Url.Action("SaveDispatch", "Dispatch")'
+            };
+            var byId = function (id) { return document.getElementById(id); };
+            var esc = SD.esc;
+            var dispatchId = byId('DispatchId').value;
+            var items = @Html.Raw(JsonSerializer.Serialize(initItems));
+            var myStaff = '@(me?.STAFFID)';
+
+            function getJson(url, q) {
+                return fetch(url + '?' + new URLSearchParams(q).toString(), { credentials: 'same-origin' })
+                    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
+            }
+            function showMsg(text, ok) {
+                var m = byId('dpMsg');
+                m.className = 'alert ' + (ok ? 'alert-success' : 'alert-danger');
+                m.textContent = text;
+                m.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+
+            /* ===== issue type -> which receiver panel (old ShowReceiver) ===== */
+            function issueFlags() {
+                var o = byId('IssueTypeId').selectedOptions[0];
+                return { id: Number(o.value), ext: o.dataset.ext === '1', per: o.dataset.per === '1' };
+            }
+            function showReceiver() {
+                var f = issueFlags();
+                byId('rNone').style.display = f.id ? 'none' : '';
+                byId('rExternal').classList.toggle('show', !!f.id && f.ext);
+                byId('rPersonal').classList.toggle('show', !!f.id && !f.ext && f.per);
+                byId('rInternal').classList.toggle('show', !!f.id && !f.ext && !f.per);
+            }
+            byId('IssueTypeId').addEventListener('change', showReceiver);
+
+            /* ===== employee auto complete (old SearchCustomers) ===== */
+            var timer;
+            function suggestEmployees(e) {
+                var v = e.target.value.trim();
+                clearTimeout(timer);
+                if (v.length < 2) return;
+                timer = setTimeout(function () {
+                    getJson(U.searchEmp, { term: v }).then(function (list) {
+                        byId('dlEmp').innerHTML = list.map(function (s) { return '<option value="' + esc(s) + '"></option>'; }).join('');
+                    }).catch(function () { });
+                }, 250);
+            }
+            byId('iName').addEventListener('input', function (e) {
+                var v = e.target.value.trim();
+                clearTimeout(timer);
+                if (v.length < 2) return;
+                timer = setTimeout(function () {
+                    getJson(U.searchItem, { term: v }).then(function (list) {
+                        byId('dlItem').innerHTML = list.map(function (s) { return '<option value="' + esc(s) + '"></option>'; }).join('');
+                    }).catch(function () { });
+                }, 250);
+            });
+
+            /* ===== one "person" block: staff id + location + department + employee + name + mobile ===== */
+            function person(p) {
+                var staff = byId(p + 'Staff'), center = byId(p + 'Center'), dept = byId(p + 'Dept'), emp = byId(p + 'Emp'),
+                    name = byId(p + 'Name'), mobile = byId(p + 'Mobile');
+
+                function loadEmployees(selectStaff) {
+                    emp.innerHTML = '<option value="">-- Select --</option>';
+                    if (!center.value || !dept.value) return Promise.resolve();
+                    return getJson(U.emps, { centerId: center.value, departmentId: dept.value }).then(function (list) {
+                        list.forEach(function (e) {
+                            var o = new Option(e.name + ' (' + e.staffId + ')', e.staffId, false, e.staffId === selectStaff);
+                            o.dataset.name = e.name || ''; o.dataset.mobile = e.mobile || '';
+                            emp.add(o);
+                        });
+                    }).catch(function () { SD.toast('Could not load the employees.', true); });
+                }
+                function fromEmployee() {           // old LoadSenderDetails / LoadReceverDetails
+                    var o = emp.selectedOptions[0];
+                    if (!o || !o.value) return;
+                    staff.value = o.value; name.value = o.dataset.name; mobile.value = o.dataset.mobile;
+                }
+                function fromStaffId() {            // old tbxStaffID_TextChanged
+                    var v = staff.value.trim();
+                    if (!v) return;
+                    getJson(U.emp, { staffId: v }).then(function (e) {
+                        if (!e.found) { SD.toast('Employee not found.', true); return; }
+                        staff.value = e.staffId; name.value = e.name || ''; mobile.value = e.mobile || '';
+                        center.value = e.centerId || ''; dept.value = e.departmentId || '';
+                        loadEmployees(e.staffId);
+                    }).catch(function () { SD.toast('Could not find the employee.', true); });
+                }
+                staff.addEventListener('input', suggestEmployees);
+                staff.addEventListener('change', fromStaffId);
+                center.addEventListener('change', function () { loadEmployees(null); });
+                dept.addEventListener('change', function () { loadEmployees(null); });
+                emp.addEventListener('change', fromEmployee);
+                return { loadEmployees: loadEmployees, emp: emp };
+            }
+            var sender = person('s');
+            person('r');
+            sender.loadEmployees(myStaff);          // default sender = the logged in user
+
+            /* ===== items (old gvDispatchItems) ===== */
+            function drawItems() {
+                byId('noItems').style.display = items.length ? 'none' : '';
+                byId('itemRows').innerHTML = items.map(function (it, i) {
+                    var att = it.attachmentUrl ? '<a href="' + esc(it.attachmentUrl) + '" target="_blank" rel="noopener"><i class="fas fa-paperclip me-1"></i>' + esc(it.attachment) + '</a>' : '-';
+                    return '<tr data-id="' + it.id + '">' +
+                        '<td data-label="SL#">' + (i + 1) + '</td>' +
+                        '<td data-label="Item">' + esc(it.name) + '</td>' +
+                        '<td data-label="Quantity"><input class="form-control form-control-sm" data-f="quantity" inputmode="decimal" value="' + esc(it.quantity) + '" /></td>' +
+                        '<td data-label="Unit"><input class="form-control form-control-sm" data-f="unit" maxlength="50" value="' + esc(it.unit) + '" /></td>' +
+                        '<td data-label="Remarks"><input class="form-control form-control-sm" data-f="notes" maxlength="200" value="' + esc(it.notes) + '" /></td>' +
+                        '<td data-label="Attachment">' + att + '</td>' +
+                        '<td data-label="Action" class="text-center text-nowrap">' +
+                        '<button type="button" class="btn btn-sm btn-outline-success me-1" data-act="upd" title="Save changes"><i class="fas fa-check"></i></button>' +
+                        '<button type="button" class="btn btn-sm btn-outline-danger" data-act="del" title="Delete"><i class="fas fa-trash"></i></button></td></tr>';
+                }).join('');
+            }
+            drawItems();
+
+            byId('itemRows').addEventListener('click', function (e) {
+                var b = e.target.closest('button[data-act]'); if (!b) return;
+                var tr = b.closest('tr'), id = tr.dataset.id;
+                if (b.dataset.act === 'upd') {
+                    var v = function (f) { return tr.querySelector('[data-f="' + f + '"]').value; };
+                    SD.post(U.upd, { id: id, quantity: v('quantity'), unit: v('unit'), notes: v('notes') }).then(done).catch(fail);
+                } else {
+                    SD.confirm({ title: 'Delete this item?', text: tr.children[1].textContent, tone: 'danger', icon: 'fa-trash', yesText: 'Delete',
+                        run: function () { return SD.post(U.del, { id: id }); } }).then(function (res) { if (res) done(res); });
+                }
+            });
+            function done(res) {
+                if (!res.success) { SD.toast(res.message, true); return; }
+                items = res.items; drawItems(); SD.toast(res.message);
+            }
+            function fail() { SD.toast('Server error. Please try again.', true); }
+
+            byId('btnAddItem').addEventListener('click', function () {
+                var name = byId('iName').value.trim();
+                if (!name) { SD.toast('Enter the Item name.', true); byId('iName').focus(); return; }
+                var fd = new FormData();
+                fd.append('dispatchId', dispatchId);
+                fd.append('itemName', name);
+                fd.append('quantity', byId('iQty').value);
+                fd.append('unit', byId('iUnit').value);
+                fd.append('notes', byId('iNotes').value);
+                var file = (byId('iPhoto') && byId('iPhoto').files[0]) || (byId('iFile') && byId('iFile').files[0]);
+                if (file) fd.append('file', file);
+                fd.append('__RequestVerificationToken', document.querySelector('input[name="__RequestVerificationToken"]').value);
+
+                var btn = this, html = btn.innerHTML; SD.lock(btn, 'Adding...');
+                fetch(U.add, { method: 'POST', credentials: 'same-origin', body: fd })
+                    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+                    .then(function (res) {
+                        done(res);
+                        if (res.success) {
+                            ['iName', 'iNotes'].forEach(function (i) { byId(i).value = ''; });          // old page cleared item + remarks
+                            ['iFile', 'iPhoto'].forEach(function (i) { if (byId(i)) byId(i).value = ''; });
+                            byId('iName').focus();
+                        }
+                    })
+                    .catch(function (err) { SD.toast(String(err.message) === '413' ? 'The file is too big.' : 'Server error. Please try again.', true); })
+                    .finally(function () { btn.disabled = false; btn.innerHTML = html; });
+            });
+
+            /* ===== SAVE (old btnSave_Click) ===== */
+            byId('btnSave').addEventListener('click', function () {
+                var f = issueFlags();
+                if (!f.id) { showMsg('Please select issuetype', false); return; }
+                if (!items.length) { showMsg('Please Add Items', false); byId('iName').focus(); return; }
+                var v = function (id) { return byId(id).value.trim(); };
+                var data = {
+                    DispatchId: dispatchId, IssueTypeId: f.id, DirectSend: byId('DirectSend').checked,
+                    SenderStaffId: sender.emp.value || v('sStaff'), SenderCenterId: v('sCenter'), SenderDepartmentId: v('sDept'),
+                    SenderName: v('sName'), SenderMobile: v('sMobile'),
+                    ReceiverStaffId: byId('rEmp').value || v('rStaff'), ReceiverCenterId: v('rCenter'), ReceiverDepartmentId: v('rDept'),
+                    ReceiverName: v('rName'), ReceiverMobile: v('rMobile'),
+                    ExtReceiverName: v('xName'), ExtReceiverMobile: v('xMobile'), ExtReceiverAddress: v('xAddress')
+                };
+                var btn = this, html = btn.innerHTML; SD.lock(btn, 'Saving...');
+                SD.post(U.save, data).then(function (res) {
+                    if (res.success) {
+                        showMsg(res.message, true);
+                        setTimeout(function () { location.href = '@Url.Action("CreateDispatch", "Dispatch")'; }, 1500);   // new empty draft
+                    } else { showMsg(res.message, false); btn.disabled = false; btn.innerHTML = html; }
+                }).catch(function () { showMsg('Save failed. Please try again.', false); btn.disabled = false; btn.innerHTML = html; });
+            });
+
+            showReceiver();
+        })();
+    </script>
+}

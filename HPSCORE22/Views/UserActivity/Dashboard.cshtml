@@ -1,0 +1,148 @@
+@* Views/UserActivity/Dashboard.cshtml - 24/7 user login activity dashboard (USER_LOGIN_LOG).
+   Tiles: successful logins / failed attempts / distinct users today + users logged in right now.
+   Chart: last 14 days (Chart.js comes from _Layout). Tables: who is online now + the last 20 events. *@
+@model AlphaCare.Models.LoginDashboardViewModel
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = "User Login Dashboard";
+    string dt(DateTime? v) => v?.ToString("dd/MM/yyyy hh:mm tt") ?? "-";
+    string ago(DateTime? v)
+    {
+        if (!v.HasValue) return "-";
+        var m = (int)(DateTime.Now - v.Value).TotalMinutes;
+        return m <= 0 ? "just now" : m < 60 ? m + " min ago" : (m / 60) + " h " + (m % 60) + " min ago";
+    }
+    var labels = Model.Trend.Select(p => p.DAY.ToString("dd/MM")).ToList();
+    var okData = Model.Trend.Select(p => p.SUCCESS_COUNT).ToList();
+    var badData = Model.Trend.Select(p => p.FAILED_COUNT).ToList();
+}
+
+<style>
+    .ull-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+    .ull-tile { display: flex; align-items: center; gap: 14px; border: 1px solid #e8ecf3; border-radius: 14px; padding: 16px 18px; background: #fff; }
+    .ull-tile .ic { width: 46px; height: 46px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; color: #fff; flex: 0 0 auto; }
+    .ull-tile .num { font-size: 1.55rem; font-weight: 700; line-height: 1.1; }
+    .ull-tile .lbl { color: #64748b; font-size: .85rem; }
+    .ull-sec { font-weight: 600; margin: 18px 0 8px; }
+    .ull-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #16a34a; margin-right: 6px; animation: ullPulse 1.6s infinite; }
+    @@keyframes ullPulse { 50% { opacity: .35; } }
+</style>
+
+<div class="sd-page" data-smart-page>
+    <div class="card shadow-sm border-0">
+        <div class="sd-head">
+            <h5 class="mb-0"><i class="fas fa-wave-square me-2"></i>User Login Dashboard</h5>
+            <span class="sd-date"><i class="far fa-calendar me-1"></i>@DateTime.Today.ToString("dddd, dd MMMM yyyy")</span>
+        </div>
+        <div class="card-body">
+            @if (ViewBag.Message is string msg && !string.IsNullOrEmpty(msg))
+            {
+                <div class="alert alert-warning py-2"><i class="fas fa-circle-exclamation me-1"></i>@msg</div>
+            }
+
+            <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                <span class="text-muted small"><i class="fas fa-circle-info me-1"></i>Counts of today; "active" = logged in and seen within the last 30 minutes.</span>
+                <span class="d-flex gap-2">
+                    <a class="btn btn-sm btn-outline-primary" href="@Url.Action("Report", "UserActivity")"><i class="fas fa-clock-rotate-left me-1"></i>Login Report</a>
+                    <a class="btn btn-sm btn-outline-secondary" href="@Url.Action("Dashboard", "UserActivity")"><i class="fas fa-rotate me-1"></i>Refresh</a>
+                </span>
+            </div>
+
+            <div class="ull-tiles mb-3">
+                <div class="ull-tile"><span class="ic" style="background:#4f46e5"><i class="fas fa-right-to-bracket"></i></span>
+                    <span><span class="num">@Model.TodayLogins</span><br /><span class="lbl">Successful logins today</span></span></div>
+                <div class="ull-tile"><span class="ic" style="background:#dc2626"><i class="fas fa-user-xmark"></i></span>
+                    <span><span class="num">@Model.TodayFailed</span><br /><span class="lbl">Failed attempts today</span></span></div>
+                <div class="ull-tile"><span class="ic" style="background:#0891b2"><i class="fas fa-users"></i></span>
+                    <span><span class="num">@Model.TodayUsers</span><br /><span class="lbl">Distinct users today</span></span></div>
+                <div class="ull-tile"><span class="ic" style="background:#059669"><i class="fas fa-signal"></i></span>
+                    <span><span class="num">@Model.ActiveUsers</span><br /><span class="lbl">Users active right now</span></span></div>
+            </div>
+
+            <div class="ull-sec"><i class="fas fa-chart-line me-1"></i>Logins - last 14 days</div>
+            <div style="position:relative;height:230px">
+                <canvas id="ullTrend"></canvas>
+            </div>
+
+            <div class="ull-sec"><span class="ull-dot"></span>Active users (@Model.Active.Count open session(s))</div>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle">
+                    <thead class="table-light">
+                        <tr><th>#</th><th>Username</th><th>User ID</th><th>Login Time</th><th>Last Activity</th><th>IP Address</th><th>Device / Browser</th></tr>
+                    </thead>
+                    <tbody>
+                        @if (Model.Active.Count == 0)
+                        {
+                            <tr><td colspan="7" class="text-muted text-center py-3"><i class="far fa-folder-open me-1"></i>Nobody is logged in right now.</td></tr>
+                        }
+                        @for (int i = 0; i < Model.Active.Count; i++)
+                        {
+                            var a = Model.Active[i];
+                            <tr>
+                                <td class="text-muted">@(i + 1)</td>
+                                <td class="fw-semibold">@a.USERNAME</td>
+                                <td>@(a.USERID ?? "-")</td>
+                                <td class="text-nowrap">@dt(a.LOGIN_TIME)</td>
+                                <td class="text-nowrap" title="@dt(a.LAST_ACTIVITY)">@ago(a.LAST_ACTIVITY ?? a.LOGIN_TIME)</td>
+                                <td>@(a.IP_ADDRESS ?? "-")</td>
+                                <td>@(a.DEVICE_INFO ?? "-")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="ull-sec"><i class="fas fa-list me-1"></i>Last activity (newest 20 attempts)</div>
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle">
+                    <thead class="table-light">
+                        <tr><th>#</th><th>Username</th><th>Login Time</th><th>Logout Time</th><th>Status</th><th>Failure Reason</th><th>IP Address</th><th>Device / Browser</th></tr>
+                    </thead>
+                    <tbody>
+                        @if (Model.Recent.Count == 0)
+                        {
+                            <tr><td colspan="8" class="text-muted text-center py-3"><i class="far fa-folder-open me-1"></i>No login has been recorded yet.</td></tr>
+                        }
+                        @for (int i = 0; i < Model.Recent.Count; i++)
+                        {
+                            var r = Model.Recent[i];
+                            string state = r.LOGIN_STATUS == "FAILED" ? "Failed" : r.LOGOUT_TIME == null ? "Active" : r.LOGOUT_TYPE == "MANUAL" ? "Logged out" : "Expired";
+                            string badge = state switch { "Failed" => "bg-danger-subtle text-danger", "Active" => "bg-success-subtle text-success", "Logged out" => "bg-secondary-subtle text-secondary", _ => "bg-warning-subtle text-warning-emphasis" };
+                            <tr>
+                                <td class="text-muted">@(i + 1)</td>
+                                <td class="fw-semibold">@r.USERNAME</td>
+                                <td class="text-nowrap">@dt(r.LOGIN_TIME)</td>
+                                <td class="text-nowrap">@dt(r.LOGOUT_TIME)</td>
+                                <td><span class="badge @badge">@state</span></td>
+                                <td>@(r.FAILURE_REASON ?? "-")</td>
+                                <td>@(r.IP_ADDRESS ?? "-")</td>
+                                <td>@(r.DEVICE_INFO ?? "-")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            var el = document.getElementById('ullTrend');
+            if (!el || typeof Chart === 'undefined') return;
+            new Chart(el.getContext('2d'), {
+                type: 'line',
+                data: {
+                    labels: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(labels)),
+                    datasets: [
+                        { label: 'Successful', data: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(okData)), borderColor: '#4f46e5', backgroundColor: 'rgba(79,70,229,.12)', fill: true, tension: .3, lineTension: .3 },
+                        { label: 'Failed', data: @Html.Raw(System.Text.Json.JsonSerializer.Serialize(badData)), borderColor: '#dc2626', backgroundColor: 'rgba(220,38,38,.10)', fill: true, tension: .3, lineTension: .3 }
+                    ]
+                },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+        })();
+    </script>
+}

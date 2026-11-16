@@ -1,0 +1,116 @@
+@* Views/Dispatch/PrintLabel.cshtml  (old YA: Pages/Dispatch/PrintLebel.aspx + PrintLebelPOS.aspx)
+   LIST PAGE - standard look (app-standard.css / app-standard.js, SD.initList).
+   My dispatches after approval (created or sent by me, last 180 days). Each row opens the label in a new tab:
+     A4 label (CODE-128 barcode) | A4 label + items | POS label (QR code) | POS label + items.
+   The label page counts the print (old UpdatePrint, DP_DISPATCH.NOOFPRINT + 1). *@
+@model List<AlphaCare.Models.DispatchListItemModel>
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = "Print Dispatch Label";
+}
+
+<div class="sd-page" data-smart-page>
+    <div class="card shadow-sm border-0">
+
+        <div class="sd-head">
+            <h5 class="mb-0"><i class="fas fa-print me-2"></i>Print Dispatch Label</h5>
+            <span class="sd-date"><i class="far fa-calendar me-1"></i>@DateTime.Today.ToString("dddd, dd MMMM yyyy")</span>
+        </div>
+
+        <div class="card-body">
+            <div class="sd-tools">
+                <div class="input-group grow">
+                    <span class="input-group-text bg-white"><i class="fas fa-magnifying-glass text-muted"></i></span>
+                    <input type="text" class="form-control" id="sdSearch" placeholder="Search dispatch id, sender, receiver, issue type..." autocomplete="off" />
+                </div>
+                <div class="input-group" style="max-width:210px">
+                    <span class="input-group-text bg-white"><i class="far fa-calendar text-muted"></i></span>
+                    <input type="date" class="form-control" id="sdDate" title="Show one date only" />
+                </div>
+                <button type="button" class="sd-link" id="sdClear" style="display:none"><i class="fas fa-xmark me-1"></i>Clear filters</button>
+                <button type="button" class="sd-link" id="sdResetSort" style="display:none"><i class="fas fa-arrow-rotate-left me-1"></i>Default order</button>
+            </div>
+
+            <div class="small text-muted mb-2">
+                <i class="fas fa-barcode me-1"></i>A4 label &nbsp;
+                <i class="fas fa-list-check ms-2 me-1"></i>A4 label with items &nbsp;
+                <i class="fas fa-qrcode ms-2 me-1"></i>POS label &nbsp;
+                <i class="fas fa-receipt ms-2 me-1"></i>POS label with items
+            </div>
+
+            <div class="sd-pane active" id="pane-all">
+                <div class="sd-wrap table-responsive">
+                    <table class="sd-table">
+                        <thead>
+                            <tr>
+                                <th class="text-center">Print</th>
+                                <th class="sortable" data-sort="tx">Dispatch ID<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable" data-sort="date">Date<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable" data-sort="sender">Sender<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable" data-sort="rec">Receiver<i class="fas fa-sort arr"></i></th>
+                                <th>Receiver Dept</th>
+                                <th>Receiver Location</th>
+                                <th class="sortable" data-sort="by">Created By<i class="fas fa-sort arr"></i></th>
+                                <th class="text-center">Printed</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{
+                                int idx = 0;
+                            }
+                            @foreach (var r in Model)
+                            {
+                                string search = $"{r.TRANSACTIONID} {r.ISSUETYPENAME} {r.EMPLOYEENAME} {r.RECEIVERNAME} {r.RECEIVERMOBILE} {r.ReceiverPlace} {r.CREATEDUSER}".ToLower();
+                                <tr data-search="@search" data-id="@r.ID" data-i="@(idx++)"
+                                    data-date="@(r.CREATEDATE?.ToString("yyyy-MM-dd"))"
+                                    data-k-tx="@((r.TRANSACTIONID ?? "").ToLower())" data-k-date="@(r.CREATEDATE?.Ticks ?? 0)"
+                                    data-k-sender="@((r.EMPLOYEENAME ?? "").ToLower())" data-k-rec="@((r.RECEIVERNAME ?? "").ToLower())"
+                                    data-k-by="@((r.CREATEDUSER ?? "").ToLower())">
+
+                                    <td class="text-center text-nowrap" data-label="Print">
+                                        <div class="sd-cell">
+                                            <a class="sd-btn" title="A4 label" target="_blank" rel="noopener" href="@Url.Action("Label", "Dispatch", new { id = r.ID })"><i class="fas fa-barcode"></i></a>
+                                            <a class="sd-btn" title="A4 label with items" target="_blank" rel="noopener" href="@Url.Action("Label", "Dispatch", new { id = r.ID, items = 1 })"><i class="fas fa-list-check"></i></a>
+                                            <a class="sd-btn" title="POS label" target="_blank" rel="noopener" href="@Url.Action("Label", "Dispatch", new { id = r.ID, pos = 1 })"><i class="fas fa-qrcode"></i></a>
+                                            <a class="sd-btn" title="POS label with items" target="_blank" rel="noopener" href="@Url.Action("Label", "Dispatch", new { id = r.ID, items = 1, pos = 1 })"><i class="fas fa-receipt"></i></a>
+                                            <a class="sd-btn" title="View Details" href="@Url.Action("ViewDispatch", "Dispatch", new { id = r.ID })"><i class="fas fa-eye"></i></a>
+                                        </div>
+                                    </td>
+                                    <td data-label="Dispatch ID" class="text-nowrap"><div class="sd-cell"><a class="sd-title" href="@Url.Action("ViewDispatch", "Dispatch", new { id = r.ID })">@r.TRANSACTIONID</a></div></td>
+                                    <td data-label="Date" class="text-nowrap"><div class="sd-cell">@(r.CREATEDATE?.ToString("dd/MM/yyyy hh:mm tt") ?? "-")</div></td>
+                                    <td data-label="Sender"><div class="sd-cell">@r.EMPLOYEENAME</div></td>
+                                    <td data-label="Receiver">
+                                        <div class="sd-cell">
+                                            @(string.IsNullOrWhiteSpace(r.RECEIVERNAME) ? "-" : r.RECEIVERNAME)
+                                            @if (!string.IsNullOrWhiteSpace(r.RECEIVERMOBILE))
+                                            {
+                                                <a class="sd-sub text-decoration-none" href="tel:@r.RECEIVERMOBILE"><i class="fas fa-phone me-1"></i>@r.RECEIVERMOBILE</a>
+                                            }
+                                        </div>
+                                    </td>
+                                    <td data-label="Receiver Dept"><div class="sd-cell">@(string.IsNullOrWhiteSpace(r.RECEIVERDEPARTMENT) ? "-" : r.RECEIVERDEPARTMENT)</div></td>
+                                    <td data-label="Receiver Location"><div class="sd-cell">@r.BUSINESSCENTER@(string.IsNullOrWhiteSpace(r.RECEIVERADDRESS) ? "" : ". " + r.RECEIVERADDRESS)</div></td>
+                                    <td data-label="Created By"><div class="sd-cell">@r.CREATEDUSER</div></td>
+                                    <td data-label="Printed" class="text-center"><div class="sd-cell">@(r.NOOFPRINT ?? 0)</div></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="sd-empty" data-empty="all" style="@(Model.Count == 0 ? "" : "display:none")">
+                    <i class="far fa-folder-open"></i> No approved dispatch of yours in the last 180 days.
+                </div>
+                <div class="sd-empty" data-empty="filter" style="display:none">
+                    <i class="fas fa-filter-circle-xmark"></i> No dispatch matched your filter.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        SD.initList();
+    </script>
+}

@@ -1,0 +1,369 @@
+@* Views/Dispatch/GateEntry.cshtml  (old YA: Pages/Dispatch/GateEntry.aspx)
+   Visitor gate entry made at the gate / reception. One open entry per user (DP_GATEENTRY.ISOPEN = 1) collects the items.
+   "To User" = the employee the visitor comes to (host), "From" = the visitor. Save gives the id "R..." and opens the details
+   page with the printable gate pass (old GatentryPrint.aspx). The gate scans "R..." on Gate Check when the visitor leaves. *@
+@model AlphaCare.Models.GateEntryCreateViewModel
+@using System.Text.Json
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = "Visitor Gate Entry";
+
+    var initItems = Model.Items.Select(i => new
+    {
+        id = i.ID,
+        name = i.ITEMNAME,
+        quantity = i.QUANTITY,
+        unit = i.UNIT,
+        remarks = i.REMARKS,
+        sample = i.ISPERSONAL == 1,
+        returnable = i.ISRETURNABLE == 1,
+        attachment = string.IsNullOrWhiteSpace(i.ATTACHMENTS) ? null : i.ATTACHMENTS,
+        attachmentUrl = string.IsNullOrWhiteSpace(i.ATTACHMENTS) ? null : Url.Action("GateEntryAttachment", "Dispatch", new { id = i.ID })
+    });
+}
+
+<style>
+    .dp-box { border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; height: 100%; background: #fff; }
+    .dp-box h6 { font-weight: 700; color: #334155; margin-bottom: 12px; }
+    .dp-box h6 i { color: #4f46e5; }
+    .dp-items td, .dp-items th { vertical-align: middle; }
+    .dp-hint { color: #64748b; font-size: 13px; }
+    @@media (max-width: 767px) {
+        .dp-items thead { display: none; }
+        .dp-items tr { display: block; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 10px; padding: 6px; }
+        .dp-items td { display: flex; gap: 8px; align-items: center; border: 0; padding: 4px 6px; }
+        .dp-items td::before { content: attr(data-label); font-weight: 600; min-width: 90px; color: #475569; }
+    }
+</style>
+
+<div class="container-fluid py-3" data-smart-page>
+    <div class="card shadow-sm border-0">
+        <div class="card-header bg-primary text-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <h5 class="mb-0"><i class="fas fa-id-card me-2"></i>Visitor Gate Entry</h5>
+            <a class="btn btn-sm btn-light" href="@Url.Action("GateCheck", "Dispatch")" data-smart><i class="fas fa-door-open me-1"></i>Gate Check</a>
+        </div>
+
+        <div class="card-body">
+            @Html.AntiForgeryToken()
+            <input type="hidden" id="EntryId" value="@Model.EntryId" />
+            <div id="geMsg" class="alert d-none"></div>
+
+            <div class="row g-3 mb-3">
+                <!-- ============ TO USER (host) ============ -->
+                <div class="col-lg-6">
+                    <div class="dp-box">
+                        <h6><i class="fas fa-user-check me-2"></i>To User (host)</h6>
+                        <div class="row">
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label fw-semibold" for="hStaff">Staff ID <span class="text-danger">*</span></label>
+                                <input type="text" id="hStaff" class="form-control" list="dlEmp" autocomplete="off" placeholder="Type ID or name" />
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label fw-semibold" for="hCenter">Location <span class="text-danger">*</span></label>
+                                <select id="hCenter" class="form-select">
+                                    <option value="">-- Select --</option>
+                                    @foreach (var c in Model.BusinessCenters)
+                                    {
+                                        <option value="@c.ID" selected="@(c.ID == Model.UserCenterId)">@c.CENTERNAME</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label fw-semibold" for="hDept">Department <span class="text-danger">*</span></label>
+                                <select id="hDept" class="form-select">
+                                    <option value="">-- Select --</option>
+                                    @foreach (var d in Model.Departments)
+                                    {
+                                        <option value="@d.ID">@d.DEPARTMENTNAME</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label fw-semibold" for="hEmp">Employee <span class="text-danger">*</span></label>
+                                <select id="hEmp" class="form-select"><option value="">-- Select --</option></select>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label fw-semibold" for="hName">Name</label>
+                                <input type="text" id="hName" class="form-control" readonly tabindex="-1" />
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label fw-semibold" for="hMobile">Mobile</label>
+                                <input type="text" id="hMobile" class="form-control" readonly tabindex="-1" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============ FROM (visitor) ============ -->
+                <div class="col-lg-6">
+                    <div class="dp-box">
+                        <h6><i class="fas fa-user-tag me-2"></i>From (visitor)</h6>
+                        <div class="row">
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label fw-semibold" for="vStaff">Staff ID <span class="dp-hint">(if an employee)</span></label>
+                                <input type="text" id="vStaff" class="form-control" list="dlEmp" autocomplete="off" placeholder="N/A" />
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label fw-semibold" for="vName">Name <span class="text-danger">*</span></label>
+                                <input type="text" id="vName" class="form-control" maxlength="120" />
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label fw-semibold" for="vMobile">Mobile</label>
+                                <input type="text" id="vMobile" class="form-control" maxlength="20" inputmode="tel" />
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <label class="form-label fw-semibold" for="vCard">Card#</label>
+                                <input type="text" id="vCard" class="form-control" maxlength="50" />
+                            </div>
+                            <div class="col-12 mb-2">
+                                <label class="form-label fw-semibold" for="vAddress">Address</label>
+                                <input type="text" id="vAddress" class="form-control" maxlength="120" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <datalist id="dlEmp"></datalist>
+            <datalist id="dlItem"></datalist>
+
+            <!-- ============ ITEMS (optional) ============ -->
+            <div class="dp-box mb-3">
+                <h6><i class="fas fa-boxes-stacked me-2"></i>Items the visitor brings <span class="dp-hint fw-normal">(optional)</span></h6>
+                <div class="row align-items-end">
+                    <div class="col-md-4 mb-2">
+                        <label class="form-label fw-semibold" for="iName">Item</label>
+                        <input type="text" id="iName" class="form-control" list="dlItem" maxlength="100" autocomplete="off" />
+                    </div>
+                    <div class="col-6 col-md-2 mb-2">
+                        <label class="form-label fw-semibold" for="iQty">Quantity</label>
+                        <input type="text" id="iQty" class="form-control" inputmode="decimal" value="1" />
+                    </div>
+                    <div class="col-6 col-md-2 mb-2">
+                        <label class="form-label fw-semibold" for="iUnit">Unit</label>
+                        <input type="text" id="iUnit" class="form-control" maxlength="50" />
+                    </div>
+                    <div class="col-md-4 mb-2">
+                        <label class="form-label fw-semibold" for="iRemarks">Remarks</label>
+                        <input type="text" id="iRemarks" class="form-control" maxlength="150" />
+                    </div>
+                    <div class="col-6 col-md-2 mb-2">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="iSample" />
+                            <label class="form-check-label fw-semibold" for="iSample">Sample</label>
+                        </div>
+                    </div>
+                    <div class="col-6 col-md-2 mb-2">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="iReturnable" />
+                            <label class="form-check-label fw-semibold" for="iReturnable">Is Returnable</label>
+                        </div>
+                    </div>
+                    @if (Model.AttachmentsEnabled)
+                    {
+                        <div class="col-md-3 mb-2">
+                            <label class="form-label fw-semibold" for="iFile">Attachment <span class="dp-hint">(max 20 MB)</span></label>
+                            <input type="file" id="iFile" class="form-control" />
+                        </div>
+                        <div class="col-md-3 mb-2">
+                            <label class="form-label fw-semibold" for="iPhoto">or take a photo</label>
+                            <input type="file" id="iPhoto" class="form-control" accept="image/*" capture="environment" />
+                        </div>
+                    }
+                    <div class="col mb-2 text-md-end">
+                        <button type="button" id="btnAddItem" class="btn btn-primary"><i class="fas fa-plus me-1"></i>Add Item</button>
+                    </div>
+                </div>
+                <p class="dp-hint mb-2">A returnable <b>sample</b> appears in the host's "My Visitors" list until the host marks it returned.</p>
+
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover dp-items mb-0">
+                        <thead class="table-light">
+                            <tr><th>SL#</th><th>Item</th><th>Quantity</th><th>Unit</th><th>Sample</th><th>Returnable</th><th>Remarks</th><th>Attachment</th><th class="text-center">Action</th></tr>
+                        </thead>
+                        <tbody id="itemRows"></tbody>
+                    </table>
+                    <p class="dp-hint mt-2 mb-0" id="noItems">No item added.</p>
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="button" id="btnSave" class="btn btn-success"><i class="fas fa-floppy-disk me-1"></i>Save</button>
+                <a href="@Url.Action("GateEntry", "Dispatch")" class="btn btn-outline-secondary"><i class="fas fa-rotate me-1"></i>Refresh</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            var U = {
+                emp: '@Url.Action("GetEmployee", "Dispatch")',
+                emps: '@Url.Action("GetEmployees", "Dispatch")',
+                searchEmp: '@Url.Action("SearchEmployee", "Dispatch")',
+                searchItem: '@Url.Action("SearchGateItem", "Dispatch")',
+                add: '@Url.Action("AddGateEntryItem", "Dispatch")',
+                del: '@Url.Action("DeleteGateEntryItem", "Dispatch")',
+                save: '@Url.Action("SaveGateEntry", "Dispatch")'
+            };
+            var byId = function (id) { return document.getElementById(id); };
+            var esc = SD.esc;
+            var entryId = byId('EntryId').value;
+            var items = @Html.Raw(JsonSerializer.Serialize(initItems));
+
+            function getJson(url, q) {
+                return fetch(url + '?' + new URLSearchParams(q).toString(), { credentials: 'same-origin' })
+                    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
+            }
+            function showMsg(text, ok) {
+                var m = byId('geMsg');
+                m.className = 'alert ' + (ok ? 'alert-success' : 'alert-danger');
+                m.textContent = text;
+                m.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+
+            /* ===== auto complete (old SearchCustomers / SearchItem) ===== */
+            function suggester(url, listId) {
+                var timer;
+                return function (e) {
+                    var v = e.target.value.trim();
+                    clearTimeout(timer);
+                    if (v.length < 2) return;
+                    timer = setTimeout(function () {
+                        getJson(url, { term: v }).then(function (list) {
+                            byId(listId).innerHTML = list.map(function (s) { return '<option value="' + esc(s) + '"></option>'; }).join('');
+                        }).catch(function () { });
+                    }, 250);
+                };
+            }
+            byId('iName').addEventListener('input', suggester(U.searchItem, 'dlItem'));
+            byId('vStaff').addEventListener('input', suggester(U.searchEmp, 'dlEmp'));
+
+            /* ===== TO USER: staff id <-> location + department + employee (old tbxStaffID_TextChanged / LoadEmployee) ===== */
+            var hStaff = byId('hStaff'), hCenter = byId('hCenter'), hDept = byId('hDept'), hEmp = byId('hEmp');
+            function loadEmployees(selectStaff) {
+                hEmp.innerHTML = '<option value="">-- Select --</option>';
+                if (!hCenter.value || !hDept.value) return Promise.resolve();
+                return getJson(U.emps, { centerId: hCenter.value, departmentId: hDept.value }).then(function (list) {
+                    list.forEach(function (e) {
+                        var o = new Option(e.name + ' (' + e.staffId + ')', e.staffId, false, e.staffId === selectStaff);
+                        o.dataset.name = e.name || ''; o.dataset.mobile = e.mobile || '';
+                        hEmp.add(o);
+                    });
+                    hEmp.value = selectStaff || '';
+                }).catch(function () { SD.toast('Could not load the employees.', true); });
+            }
+            function fromEmployee() {
+                var o = hEmp.selectedOptions[0];
+                if (!o || !o.value) return;
+                hStaff.value = o.value; byId('hName').value = o.dataset.name; byId('hMobile').value = o.dataset.mobile;
+            }
+            hStaff.addEventListener('input', suggester(U.searchEmp, 'dlEmp'));
+            hStaff.addEventListener('change', function () {
+                var v = hStaff.value.trim();
+                if (!v) return;
+                getJson(U.emp, { staffId: v }).then(function (e) {
+                    if (!e.found) { SD.toast('Employee not found.', true); return; }
+                    hStaff.value = e.staffId; byId('hName').value = e.name || ''; byId('hMobile').value = e.mobile || '';
+                    hCenter.value = e.centerId || ''; hDept.value = e.departmentId || '';
+                    loadEmployees(e.staffId);
+                }).catch(function () { SD.toast('Could not find the employee.', true); });
+            });
+            hCenter.addEventListener('change', function () { loadEmployees(null); });
+            hDept.addEventListener('change', function () { loadEmployees(null); });
+            hEmp.addEventListener('change', fromEmployee);
+
+            /* ===== FROM: an employee as visitor (old tbxFromStaffID_TextChanged) ===== */
+            byId('vStaff').addEventListener('change', function () {
+                var v = byId('vStaff').value.trim();
+                if (!v || v.toUpperCase() === 'N/A') return;
+                getJson(U.emp, { staffId: v }).then(function (e) {
+                    if (!e.found) return;
+                    byId('vStaff').value = e.staffId; byId('vName').value = e.name || ''; byId('vMobile').value = (e.mobile || '').slice(0, 20);
+                    byId('vAddress').value = ((e.centerCode || '') + '-' + (e.departmentCode || '')).slice(0, 120);
+                }).catch(function () { });
+            });
+
+            /* ===== items (old gvGateEntryItems) ===== */
+            function yes(b) { return b ? '<span class="badge bg-info-subtle text-info">Yes</span>' : 'No'; }
+            function drawItems() {
+                byId('noItems').style.display = items.length ? 'none' : '';
+                byId('itemRows').innerHTML = items.map(function (it, i) {
+                    var att = it.attachmentUrl ? '<a href="' + esc(it.attachmentUrl) + '" target="_blank" rel="noopener"><i class="fas fa-paperclip me-1"></i>' + esc(it.attachment) + '</a>' : '-';
+                    return '<tr data-id="' + it.id + '">' +
+                        '<td data-label="SL#">' + (i + 1) + '</td>' +
+                        '<td data-label="Item">' + esc(it.name) + '</td>' +
+                        '<td data-label="Quantity">' + esc(it.quantity) + '</td>' +
+                        '<td data-label="Unit">' + esc(it.unit || '') + '</td>' +
+                        '<td data-label="Sample">' + yes(it.sample) + '</td>' +
+                        '<td data-label="Returnable">' + yes(it.returnable) + '</td>' +
+                        '<td data-label="Remarks">' + esc(it.remarks || '') + '</td>' +
+                        '<td data-label="Attachment">' + att + '</td>' +
+                        '<td data-label="Action" class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" data-act="del" title="Delete"><i class="fas fa-trash"></i></button></td></tr>';
+                }).join('');
+            }
+            drawItems();
+
+            function done(res) {
+                if (!res.success) { SD.toast(res.message, true); return; }
+                items = res.items; drawItems(); SD.toast(res.message);
+            }
+            byId('itemRows').addEventListener('click', function (e) {
+                var b = e.target.closest('button[data-act="del"]'); if (!b) return;
+                var tr = b.closest('tr');
+                SD.confirm({ title: 'Delete this item?', text: tr.children[1].textContent, tone: 'danger', icon: 'fa-trash', yesText: 'Delete',
+                    run: function () { return SD.post(U.del, { id: tr.dataset.id }); } }).then(function (res) { if (res) done(res); });
+            });
+
+            byId('btnAddItem').addEventListener('click', function () {
+                var name = byId('iName').value.trim();
+                if (!name) { SD.toast('Item Name Is Required', true); byId('iName').focus(); return; }
+                var fd = new FormData();
+                fd.append('entryId', entryId);
+                fd.append('itemName', name);
+                fd.append('quantity', byId('iQty').value);
+                fd.append('unit', byId('iUnit').value);
+                fd.append('remarks', byId('iRemarks').value);
+                fd.append('sample', byId('iSample').checked);
+                fd.append('returnable', byId('iReturnable').checked);
+                var file = (byId('iPhoto') && byId('iPhoto').files[0]) || (byId('iFile') && byId('iFile').files[0]);
+                if (file) fd.append('file', file);
+                fd.append('__RequestVerificationToken', document.querySelector('input[name="__RequestVerificationToken"]').value);
+
+                var btn = this, html = btn.innerHTML; SD.lock(btn, 'Adding...');
+                fetch(U.add, { method: 'POST', credentials: 'same-origin', body: fd })
+                    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+                    .then(function (res) {
+                        done(res);
+                        if (res.success) {                              // old page: item, remarks, unit and quantity cleared
+                            byId('iName').value = ''; byId('iRemarks').value = ''; byId('iUnit').value = ''; byId('iQty').value = '1';
+                            byId('iSample').checked = false; byId('iReturnable').checked = false;
+                            ['iFile', 'iPhoto'].forEach(function (i) { if (byId(i)) byId(i).value = ''; });
+                            byId('iName').focus();
+                        }
+                    })
+                    .catch(function (err) { SD.toast(String(err.message) === '413' ? 'The file is too big.' : 'Server error. Please try again.', true); })
+                    .finally(function () { btn.disabled = false; btn.innerHTML = html; });
+            });
+
+            /* ===== SAVE (old btnSave_Click -> GatentryPrint.aspx) ===== */
+            byId('btnSave').addEventListener('click', function () {
+                var v = function (id) { return byId(id).value.trim(); };
+                var host = hEmp.value || v('hStaff');
+                if (!host) { showMsg('Select the employee the visitor comes to (To User).', false); hStaff.focus(); return; }
+                if (!v('vName')) { showMsg("Enter the visitor's Name.", false); byId('vName').focus(); return; }
+                var data = {
+                    EntryId: entryId, HostStaffId: host, HostCenterId: v('hCenter') || 0, HostDepartmentId: v('hDept') || 0,
+                    VisitorStaffId: v('vStaff'), VisitorName: v('vName'), VisitorAddress: v('vAddress'), VisitorMobile: v('vMobile'), CardNo: v('vCard')
+                };
+                var btn = this, html = btn.innerHTML; SD.lock(btn, 'Saving...');
+                SD.post(U.save, data).then(function (res) {
+                    if (res.success) { showMsg(res.message, true); location.href = res.url; }
+                    else { showMsg(res.message, false); btn.disabled = false; btn.innerHTML = html; }
+                }).catch(function () { showMsg('Save failed. Please try again.', false); btn.disabled = false; btn.innerHTML = html; });
+            });
+        })();
+    </script>
+}

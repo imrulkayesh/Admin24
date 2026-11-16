@@ -33,7 +33,7 @@ namespace Admin360.Repositories
             {
                 const string sqlAdmin = @"
                     SELECT M.ID, M.MODULENAME, M.ICON, M.URL
-                      FROM UC_MODULE M
+                      FROM UC_MODULE_COPY M WHERE M.ISACTIVE=1
                      ORDER BY M.MODULEORDER ASC";
                 return conn.Query<ModuleModel>(sqlAdmin).ToList();
             }
@@ -42,7 +42,7 @@ namespace Admin360.Repositories
                 SELECT DISTINCT M.ID, M.MODULENAME, M.ICON, M.URL, M.MODULEORDER
                   FROM UC_TASKPERMISSION_COPY TP
                  INNER JOIN UC_TASKMANAGER_COPY T ON T.ID = TP.TASKID
-                 INNER JOIN UC_MODULE M ON M.ID = T.MODULEID
+                 INNER JOIN UC_MODULE_COPY M ON M.ID = T.MODULEID AND M.ISACTIVE=1
                  WHERE TP.ROLEID IN (SELECT ROLEID FROM UC_USERROLE WHERE STAFFID = :StaffId)
                  ORDER BY M.MODULEORDER ASC";
             return conn.Query<ModuleModel>(sql, new { StaffId = staffId }).ToList();

@@ -1,0 +1,132 @@
+@* Views/UserManagement/TaskPermission.cshtml (old YA: TaskPermission.aspx - the TreeView page)
+   Pick a role -> its menu permissions appear as a checked tree of Admin24's menu entries (UC_*_COPY).
+   Save replaces the role's permissions with the checked entries; a parent with a checked child is stored too. *@
+@model AlphaCare.Models.TaskPermissionViewModel
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = "Task Permission";
+}
+
+<style>
+    .tp-root { border: 1px solid #e8ecf3; border-radius: 10px; padding: 10px 14px; margin-bottom: 10px; background: #fff; }
+    .tp-root > .form-check { font-weight: 600; }
+    .tp-module { font-size: .75rem; color: #64748b; margin-left: 6px; }
+    .tp-children { margin-left: 26px; display: flex; flex-wrap: wrap; gap: 2px 22px; }
+</style>
+
+<div class="sd-page" data-smart-page>
+    <div class="card shadow-sm border-0">
+        <div class="sd-head">
+            <h5 class="mb-0"><i class="fas fa-key me-2"></i>Task Permission</h5>
+            <span class="sd-date"><i class="far fa-calendar me-1"></i>@DateTime.Today.ToString("dddd, dd MMMM yyyy")</span>
+        </div>
+
+        <div class="card-body">
+            <p class="text-muted small mb-2"><i class="fas fa-circle-info me-1"></i>Select a role, tick the pages it may open, press Save. Saving replaces the role's current permissions.</p>
+            @Html.AntiForgeryToken()
+
+            <div class="row g-2 align-items-end mb-3">
+                <div class="col-md-4">
+                    <label for="fRole" class="form-label fw-semibold">Role <span class="text-danger">*</span></label>
+                    <select id="fRole" class="form-select">
+                        <option value="0">--- Select ---</option>
+                        @foreach (var o in Model.Roles) { <option value="@o.Value" selected="@(o.Value == Model.RoleId.ToString())">@o.Text</option> }
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label for="tpFilter" class="form-label fw-semibold">Find a page</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-white"><i class="fas fa-magnifying-glass text-muted"></i></span>
+                        <input type="text" id="tpFilter" class="form-control" placeholder="Filter the menu entries..." autocomplete="off" />
+                    </div>
+                </div>
+                <div class="col-md-auto">
+                    <button type="button" class="btn btn-primary" id="btnSave" @(Model.RoleId > 0 ? "" : "disabled")><i class="fas fa-floppy-disk me-1"></i>Save</button>
+                </div>
+            </div>
+
+            @if (Model.RoleId <= 0)
+            {
+                <div class="alert alert-warning py-2"><i class="fas fa-circle-exclamation me-1"></i>Select a role to load its permissions.</div>
+            }
+
+            @foreach (var root in Model.Tree)
+            {
+                <div class="tp-root">
+                    <div class="form-check">
+                        <input class="form-check-input tp-chk tp-parent" type="checkbox" id="t@(root.ID)" value="@root.ID" checked="@root.Checked" />
+                        <label class="form-check-label" for="t@(root.ID)">@root.Text
+                            @if (!string.IsNullOrEmpty(root.Module)) { <span class="tp-module">(@root.Module)</span> }
+                        </label>
+                    </div>
+                    @if (root.Children.Count > 0)
+                    {
+                        <div class="tp-children">
+                            @foreach (var c in root.Children)
+                            {
+                                <div class="form-check">
+                                    <input class="form-check-input tp-chk" type="checkbox" id="t@(c.ID)" value="@c.ID" data-parent="@root.ID" checked="@c.Checked" />
+                                    <label class="form-check-label" for="t@(c.ID)">@c.Text</label>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            var byId = function (id) { return document.getElementById(id); };
+            byId('fRole').addEventListener('change', function () {
+                location.href = '@Url.Action("TaskPermission", "UserManagement")?roleId=' + byId('fRole').value;
+            });
+
+            // ticking a parent (group header) ticks / unticks its children, like the old TreeView
+            document.querySelectorAll('.tp-parent').forEach(function (p) {
+                p.addEventListener('change', function () {
+                    document.querySelectorAll('.tp-chk[data-parent="' + p.value + '"]').forEach(function (c) { c.checked = p.checked; });
+                });
+            });
+
+            // quick filter: hide groups with no matching entry (checked state of hidden rows is kept)
+            byId('tpFilter').addEventListener('input', function () {
+                var q = byId('tpFilter').value.trim().toLowerCase();
+                document.querySelectorAll('.tp-root').forEach(function (g) {
+                    var any = false;
+                    g.querySelectorAll('.form-check').forEach(function (fc) {
+                        var hit = !q || fc.textContent.toLowerCase().indexOf(q) >= 0;
+                        fc.style.display = hit ? '' : 'none';
+                        if (hit) any = true;
+                    });
+                    if (any) g.querySelector('.form-check').style.display = '';   // keep the group header visible
+                    g.style.display = any ? '' : 'none';
+                });
+            });
+
+            byId('btnSave').addEventListener('click', function (e) {
+                var btn = e.currentTarget;
+                var roleId = byId('fRole').value;
+                if (!roleId || roleId === '0') { SD.toast('Select the Role.', true); return; }
+                var ids = Array.prototype.slice.call(document.querySelectorAll('.tp-chk:checked')).map(function (c) { return c.value; });
+                var data = { roleId: roleId };
+                ids.forEach(function (v, i) { data['taskIds[' + i + ']'] = v; });
+                var btnHtml = btn.innerHTML;
+                var unlock = function () { btn.disabled = false; btn.innerHTML = btnHtml; };
+                SD.lock(btn, 'Saving...');
+                SD.post('@Url.Action("SaveTaskPermission", "UserManagement")', data)
+                    .then(function (res) {
+                        SD.toast(res.message, !res.success);
+                        // reload the tree from the database so what you see is what was really stored
+                        if (res.success) setTimeout(function () { location.href = '@Url.Action("TaskPermission", "UserManagement")?roleId=' + roleId; }, 700);
+                        else unlock();
+                    })
+                    .catch(function () { unlock(); SD.toast('Server error. Please try again.', true); });
+            });
+        })();
+    </script>
+}

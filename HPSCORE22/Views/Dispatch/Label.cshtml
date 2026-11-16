@@ -1,0 +1,186 @@
+@* Views/Dispatch/Label.cshtml  (old YA: pnPrint panel of PrintLebel.aspx / PrintLebelPOS.aspx + PrintPanel())
+   Own page (no layout) opened in a new tab from /Dispatch/PrintLabel. It counts the print (MarkPrinted) and opens the print dialog.
+     A4  : sender box | barcode (CODE-128) + receiver box, optional item list
+     POS : 250px wide label, QR code, sender + receiver information, optional item list
+   Personal issue type: no receiver information (old rcvDetails.Visible = false). The code stays visible so the gate can scan it. *@
+@model AlphaCare.Models.DispatchLabelViewModel
+@{
+    Layout = null;
+    var d = Model.Dispatch;
+    string date = d.CREATEDATE?.ToString("dd/MM/yyyy hh:mm tt") ?? "";
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Label @d.TRANSACTIONID</title>
+    <style>
+        :root { color-scheme: light; }
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 16px; background: #fff; color: #000; font: 13px/1.4 Arial, Helvetica, sans-serif; }
+        .bar { display: flex; gap: 8px; margin-bottom: 16px; }
+        .bar button { padding: 6px 14px; border: 1px solid #94a3b8; border-radius: 6px; background: #f8fafc; cursor: pointer; font: inherit; }
+        .bar button.main { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+        .bar .note { align-self: center; color: #64748b; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
+        td, th { border: 1px solid #999; padding: 3px 6px; text-align: left; vertical-align: top; }
+        th { background: #f1f5f9; }
+        .center { text-align: center; }
+        .code img { display: block; margin: 0 auto; }
+        .tx { font-weight: bold; letter-spacing: 1px; }
+
+        /* A4 */
+        .a4 .row { display: flex; gap: 2%; }
+        .a4 .col { width: 49%; }
+        .a4 .code img { width: 60%; height: 44px; }
+
+        /* POS (old PrintLebelPOS: 250px) */
+        .pos { width: 250px; }
+        .pos h3 { margin: 0 0 6px; text-align: center; font-size: 16px; }
+        .pos h4 { margin: 8px 0 4px; font-size: 13px; text-decoration: underline; }
+        .pos p { margin: 2px 0; }
+        .pos .code img { width: 150px; height: 150px; }
+        .pos td, .pos th { padding: 2px 4px; font-size: 12px; }
+
+        @@media print {
+            body { padding: 0; }
+            .bar { display: none; }
+            @@page { margin: 8mm; }
+        }
+    </style>
+</head>
+<body>
+    @Html.AntiForgeryToken()
+    <div class="bar">
+        <button type="button" class="main" onclick="window.print()">Print</button>
+        <button type="button" onclick="window.close()">Close</button>
+        <span class="note" id="note"></span>
+    </div>
+
+    @if (!Model.Pos)
+    {
+        <div class="a4">
+            <div class="row">
+                <div class="col">
+                    <table>
+                        <tr><td colspan="2" class="center"><b>PRAN-RFL Group</b></td></tr>
+                        <tr><td>Sender Name</td><td>@d.EMPLOYEENAME</td></tr>
+                        <tr><td>Mobile</td><td>@d.OFFICEMOBILE</td></tr>
+                        <tr><td>Location</td><td>@d.CENTERCODE-@d.SENDERADDRESS</td></tr>
+                        <tr><td>Department</td><td>@d.DEPARTMENTCODE</td></tr>
+                        <tr><td>Date</td><td>@date</td></tr>
+                    </table>
+                </div>
+                <div class="col">
+                    <table>
+                        <tr>
+                            <td colspan="2" class="center code">
+                                @if (Model.CodeImage.Length > 0)
+                                {
+                                    <img src="@Model.CodeImage" alt="Barcode @d.TRANSACTIONID" />
+                                }
+                                <span class="tx">@d.TRANSACTIONID</span>
+                            </td>
+                        </tr>
+                        @if (Model.ShowReceiver)
+                        {
+                            <tr><td>Receiver Name</td><td>@d.RECEIVERNAME</td></tr>
+                            <tr><td>Mobile</td><td>@d.RECEIVERMOBILE</td></tr>
+                            <tr><td>Location</td><td>@Model.ReceiverLocation</td></tr>
+                            <tr><td>Department</td><td>@d.RECEIVERDEPARTMENT</td></tr>
+                        }
+                        <tr><td>Issue Type</td><td>@d.ISSUETYPENAME</td></tr>
+                    </table>
+                </div>
+            </div>
+            @if (Model.WithItems)
+            {
+                <table>
+                    <thead><tr><th>SL#</th><th>Item Name</th><th>Quantity</th><th>Remarks</th></tr></thead>
+                    <tbody>
+                        @for (int i = 0; i < Model.Items.Count; i++)
+                        {
+                            var it = Model.Items[i];
+                            <tr><td>@(i + 1)</td><td>@it.ITEMNAME</td><td>@(it.QUANTITY?.ToString("0.##")) @it.UNIT</td><td>@it.NOTES</td></tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="pos">
+            <h3>PRAN-RFL Group</h3>
+            <div class="center code">
+                @if (Model.CodeImage.Length > 0)
+                {
+                    <img src="@Model.CodeImage" alt="QR code @d.TRANSACTIONID" />
+                }
+                <span class="tx">@d.TRANSACTIONID</span>
+            </div>
+            <p>Date: @date</p>
+            <p>Item: @d.ISSUETYPENAME</p>
+
+            <h4>Sender Information</h4>
+            <table>
+                <tr><td>Location</td><td>@d.CENTERCODE-@d.SENDERADDRESS</td></tr>
+                <tr><td>Name</td><td>@d.EMPLOYEENAME</td></tr>
+                <tr><td>Mobile</td><td>@d.OFFICEMOBILE</td></tr>
+                <tr><td>Dept.</td><td>@d.DEPARTMENTCODE</td></tr>
+            </table>
+
+            @if (Model.ShowReceiver)
+            {
+                <h4>Receiver Information</h4>
+                <table>
+                    <tr><td>Location</td><td>@Model.ReceiverLocation</td></tr>
+                    <tr><td>Name</td><td>@d.RECEIVERNAME</td></tr>
+                    <tr><td>Mobile</td><td>@d.RECEIVERMOBILE</td></tr>
+                    <tr><td>Dept.</td><td>@d.RECEIVERDEPARTMENT</td></tr>
+                </table>
+            }
+
+            @if (Model.WithItems)
+            {
+                <h4>Items</h4>
+                <table>
+                    <thead><tr><th>SL#</th><th>Item</th><th>Qty</th></tr></thead>
+                    <tbody>
+                        @for (int i = 0; i < Model.Items.Count; i++)
+                        {
+                            var it = Model.Items[i];
+                            <tr><td>@(i + 1)</td><td>@it.ITEMNAME@(string.IsNullOrWhiteSpace(it.NOTES) ? "" : " (" + it.NOTES + ")")</td><td>@(it.QUANTITY?.ToString("0.##")) @it.UNIT</td></tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+
+    <script>
+        (function () {
+            // old btnPrint: UpdatePrint (NOOFPRINT + 1), then PrintPanel()
+            var note = document.getElementById('note');
+            var body = new URLSearchParams();
+            body.append('id', '@d.ID');
+            body.append('__RequestVerificationToken', document.querySelector('input[name="__RequestVerificationToken"]').value);
+            fetch('@Url.Action("MarkPrinted", "Dispatch")', {
+                method: 'POST', credentials: 'same-origin', body: body,
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+            })
+                .then(function (r) { return r.ok ? r.json() : { success: false }; })
+                .then(function (res) { if (!res.success) note.textContent = 'The print was not counted.'; })
+                .catch(function () { note.textContent = 'The print was not counted.'; })
+                .then(function () {
+                    // wait for the code image before the print dialog opens
+                    var img = document.querySelector('.code img');
+                    if (!img || img.complete) { window.print(); return; }
+                    img.addEventListener('load', function () { window.print(); });
+                    img.addEventListener('error', function () { window.print(); });
+                });
+        })();
+    </script>
+</body>
+</html>

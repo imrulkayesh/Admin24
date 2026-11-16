@@ -1,0 +1,310 @@
+@* Views/Dispatch/GateCheck.cshtml  (old YA: Pages/Dispatch/GateCheck.aspx + GateCheckGlobal.aspx)
+   Gate man page. Header shows the gate number (DP_ASSIGNGATEMAN.GATENO, default 1).
+   - Scan or type an id (a barcode / QR scanner types it and presses Enter):
+       "D..." = dispatch   -> sender, receiver, items, steps + Allow (gate pass)
+       "R..." = gate entry -> host, visitor, items + Allow (gate pass)
+   - Without an id: dispatches of my location waiting for the gate (last 10 days) with Reject / View / Allow. *@
+@model AlphaCare.Models.GateCheckViewModel
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = "Gate Check";
+    var f = Model.Found;
+    var g = Model.Entry;
+    string listUrl = Url.Action("GateCheck", "Dispatch") ?? "";
+}
+
+<style>
+    .gc-box { border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; height: 100%; background: #fff; }
+    .gc-box h6 { font-weight: 700; color: #334155; margin-bottom: 10px; }
+    .gc-box h6 i { color: #4f46e5; }
+    .gc-row { display: flex; gap: 8px; padding: 3px 0; }
+    .gc-row b { min-width: 110px; color: #475569; font-weight: 600; }
+    .gc-gate { font-size: 1.05rem; }
+    .gc-scan { max-width: 560px; }
+</style>
+
+<div class="sd-page" data-smart-page>
+    <div class="card shadow-sm border-0">
+
+        <div class="sd-head">
+            <h5 class="mb-0"><i class="fas fa-door-open me-2"></i>Gate Check</h5>
+            <span class="badge bg-dark gc-gate"><i class="fas fa-torii-gate me-1"></i>Gate# @(Model.GateNo > 0 ? Model.GateNo.ToString() : "-")</span>
+        </div>
+
+        <div class="card-body">
+            @Html.AntiForgeryToken()
+
+            @if (Model.GateNo <= 0)
+            {
+                <div class="alert alert-warning py-2"><i class="fas fa-triangle-exclamation me-1"></i>No gate number is assigned to you. Gate pass is not possible.</div>
+            }
+
+            <!-- old tbxSearchDispatch + btnSearch -->
+            <form method="get" action="@listUrl" class="gc-scan mb-3" autocomplete="off">
+                <div class="input-group">
+                    <span class="input-group-text bg-white"><i class="fas fa-barcode"></i></span>
+                    <input type="text" name="tx" id="gcTx" class="form-control" maxlength="50" placeholder="Scan or enter Transaction ID (D... / R...)" autofocus />
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-magnifying-glass me-1"></i>Search</button>
+                </div>
+            </form>
+
+            @if (!string.IsNullOrWhiteSpace(Model.Message))
+            {
+                <div class="alert alert-danger py-2"><i class="fas fa-ban me-1"></i>@Model.Message</div>
+            }
+
+            @if (f != null)
+            {
+                var d = f.Dispatch;
+                bool passed = (d.GATEPASS ?? 0) == 1;
+                <!-- old pnDispatch -->
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                    <h5 class="mb-0">Dispatch <span class="fw-bold">@d.TRANSACTIONID</span>
+                        @if (passed)
+                        {
+                            <span class="badge bg-success ms-1">Already gate passed</span>
+                        }
+                    </h5>
+                    <div class="d-flex gap-2">
+                        <a class="btn btn-outline-secondary" href="@listUrl"><i class="fas fa-reply me-1"></i>Back</a>
+                        @if (!passed && Model.GateNo > 0)
+                        {
+                            <button type="button" class="btn btn-success" data-act="pass" data-tx="@d.TRANSACTIONID"><i class="fas fa-square-check me-1"></i>Allow (Gate Pass)</button>
+                        }
+                    </div>
+                </div>
+
+                <div class="row g-3 mb-3">
+                    <div class="col-lg-4">
+                        <div class="gc-box">
+                            <h6><i class="fas fa-circle-info me-2"></i>Dispatch</h6>
+                            <div class="gc-row"><b>Dispatch ID</b><span>@d.TRANSACTIONID</span></div>
+                            <div class="gc-row"><b>Date</b><span>@(d.CREATEDATE?.ToString("dd/MM/yyyy hh:mm tt") ?? "-")</span></div>
+                            <div class="gc-row"><b>Issue Type</b><span>@d.ISSUETYPENAME</span></div>
+                        </div>
+                    </div>
+                    <div class="col-lg-4">
+                        <div class="gc-box">
+                            <h6><i class="fas fa-user-tag me-2"></i>Sender</h6>
+                            <div class="gc-row"><b>Name</b><span>@d.EMPLOYEENAME</span></div>
+                            <div class="gc-row"><b>Department</b><span>@d.DEPARTMENTCODE</span></div>
+                            <div class="gc-row"><b>Location</b><span>@d.CENTERCODE</span></div>
+                            <div class="gc-row"><b>Mobile</b><span>@d.OFFICEMOBILE</span></div>
+                        </div>
+                    </div>
+                    <div class="col-lg-4">
+                        <div class="gc-box">
+                            <h6><i class="fas fa-user-check me-2"></i>Receiver</h6>
+                            <div class="gc-row"><b>Name</b><span>@d.RECEIVERNAME</span></div>
+                            <div class="gc-row"><b>Department</b><span>@d.RECEIVERDEPARTMENT</span></div>
+                            <div class="gc-row"><b>Location</b><span>@d.BUSINESSCENTER@(string.IsNullOrWhiteSpace(d.RECEIVERADDRESS) ? "" : ". " + d.RECEIVERADDRESS)</span></div>
+                            <div class="gc-row"><b>Mobile</b><span>@d.RECEIVERMOBILE</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="gc-box mb-3">
+                    <h6><i class="fas fa-boxes-stacked me-2"></i>Dispatch Items</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0">
+                            <thead class="table-light"><tr><th>SL#</th><th>Item Name</th><th>Quantity</th><th>Remarks</th><th>Attachment</th></tr></thead>
+                            <tbody>
+                                @for (int i = 0; i < f.Items.Count; i++)
+                                {
+                                    var it = f.Items[i];
+                                    <tr>
+                                        <td>@(i + 1)</td>
+                                        <td>@it.ITEMNAME</td>
+                                        <td>@(it.QUANTITY?.ToString("0.##")) @it.UNIT</td>
+                                        <td>@it.NOTES</td>
+                                        <td>
+                                            @if (!string.IsNullOrWhiteSpace(it.ATTACHMENT))
+                                            {
+                                                <a href="@Url.Action("Attachment", "Dispatch", new { id = it.ID })" target="_blank" rel="noopener"><i class="fas fa-paperclip me-1"></i>Download</a>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                                @if (f.Items.Count == 0)
+                                {
+                                    <tr><td colspan="5" class="text-muted">No item.</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="gc-box mb-3">
+                    <h6><i class="fas fa-route me-2"></i>Transit Details</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0">
+                            <thead class="table-light"><tr><th>SL#</th><th>Step</th><th>Employee</th><th>Issue Date</th><th>Release Date</th><th>Required Time (Hours)</th><th>Remarks</th></tr></thead>
+                            <tbody>
+                                @for (int i = 0; i < f.Transits.Count; i++)
+                                {
+                                    var t = f.Transits[i];
+                                    string hours = t.RECEIVEDATE.HasValue && t.RELEASEDATE.HasValue
+                                        ? (t.RELEASEDATE.Value - t.RECEIVEDATE.Value).TotalHours.ToString("0.##") : "-";
+                                    <tr class="@(t.ISACTIVE == 1 ? "table-warning" : "")">
+                                        <td>@(i + 1)</td>
+                                        <td>@t.STEP</td>
+                                        <td>@(string.IsNullOrWhiteSpace(t.EMPLOYEENAME) ? (t.UPDATEDBY ?? "-") : t.EMPLOYEENAME)</td>
+                                        <td class="text-nowrap">@(t.RECEIVEDATE?.ToString("dd/MM/yyyy hh:mm tt") ?? "-")</td>
+                                        <td class="text-nowrap">@(t.RELEASEDATE?.ToString("dd/MM/yyyy hh:mm tt") ?? "-")</td>
+                                        <td>@hours</td>
+                                        <td>@t.REMARKS</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+            else if (g != null)
+            {
+                <!-- old pnGateEntry -->
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                    <h5 class="mb-0">Gate Entry <span class="fw-bold">@g.GATEENTRYID</span></h5>
+                    <div class="d-flex gap-2">
+                        <a class="btn btn-outline-secondary" href="@listUrl"><i class="fas fa-reply me-1"></i>Back</a>
+                        @if (Model.GateNo > 0)
+                        {
+                            <button type="button" class="btn btn-success" data-act="pass" data-tx="@g.GATEENTRYID"><i class="fas fa-square-check me-1"></i>Allow (Gate Pass)</button>
+                        }
+                    </div>
+                </div>
+
+                <div class="row g-3 mb-3">
+                    <div class="col-lg-6">
+                        <div class="gc-box">
+                            <h6><i class="fas fa-user-tie me-2"></i>Host</h6>
+                            <div class="gc-row"><b>Name</b><span>@g.EMPLOYEENAME</span></div>
+                            <div class="gc-row"><b>Mobile</b><span>@g.OFFICEMOBILE</span></div>
+                            <div class="gc-row"><b>Location</b><span>@g.CENTERNAME</span></div>
+                            <div class="gc-row"><b>Department</b><span>@g.DEPARTMENTCODE</span></div>
+                        </div>
+                    </div>
+                    <div class="col-lg-6">
+                        <div class="gc-box">
+                            <h6><i class="fas fa-id-card me-2"></i>Visitor</h6>
+                            <div class="gc-row"><b>Name</b><span>@g.VISTORNAME</span></div>
+                            <div class="gc-row"><b>Mobile</b><span>@g.VISTORMOBILE</span></div>
+                            <div class="gc-row"><b>Address</b><span>@g.VISITORADDRESS</span></div>
+                            <div class="gc-row"><b>Card No</b><span>@g.VISTORCARDNO</span></div>
+                            <div class="gc-row"><b>Entry Time</b><span>@(g.INDATETIME?.ToString("dd/MM/yyyy hh:mm tt") ?? "-")</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="gc-box mb-3">
+                    <h6><i class="fas fa-boxes-stacked me-2"></i>Gate Entry Items</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0">
+                            <thead class="table-light"><tr><th>Item Name</th><th>Quantity</th><th>Remarks</th><th>Personal</th><th>Returnable</th><th>Attachment</th></tr></thead>
+                            <tbody>
+                                @foreach (var it in Model.EntryItems)
+                                {
+                                    <tr>
+                                        <td>@it.ITEMNAME</td>
+                                        <td>@(it.QUANTITY?.ToString("0.##")) @it.UNIT</td>
+                                        <td>@it.REMARKS</td>
+                                        <td>@(it.ISPERSONAL == 1 ? "YES" : "NO")</td>
+                                        <td>@(it.ISRETURNABLE == 1 ? "YES" : "NO")</td>
+                                        <td>
+                                            @if (string.IsNullOrWhiteSpace(it.ATTACHMENTS))
+                                            {
+                                                <span>-</span>
+                                            }
+                                            else
+                                            {
+                                                <a href="@Url.Action("GateEntryAttachment", "Dispatch", new { id = it.ID })" target="_blank" rel="noopener"><i class="fas fa-paperclip me-1"></i>@it.ATTACHMENTS</a>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                                @if (Model.EntryItems.Count == 0)
+                                {
+                                    <tr><td colspan="6" class="text-muted">No item.</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <!-- old PnlGatePass / rptGatePass -->
+                <h6 class="fw-bold mb-2"><i class="fas fa-hourglass-half me-1 text-warning"></i>Waiting for the gate (my location, last 10 days) <span class="badge bg-secondary">@Model.Waiting.Count</span></h6>
+                <div class="sd-wrap table-responsive">
+                    <table class="sd-table">
+                        <thead>
+                            <tr>
+                                <th class="text-center">Action</th>
+                                <th>Create Date</th>
+                                <th>Transaction ID</th>
+                                <th>From Person</th>
+                                <th>To Person</th>
+                                <th>Issue Type</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var r in Model.Waiting)
+                            {
+                                <tr data-id="@r.ID" data-title="@r.TRANSACTIONID">
+                                    <td class="text-center text-nowrap" data-label="Action">
+                                        <div class="sd-cell">
+                                            @if (Model.GateNo > 0)
+                                            {
+                                                <button type="button" class="sd-btn ok" title="Allow (Gate Pass)" data-act="pass" data-tx="@r.TRANSACTIONID"><i class="fas fa-check"></i></button>
+                                            }
+                                            <a class="sd-btn" title="View" href="@Url.Action("GateCheck", "Dispatch", new { tx = r.TRANSACTIONID })"><i class="fas fa-eye"></i></a>
+                                            <button type="button" class="sd-btn no" title="Reject at the gate" data-act="reject"><i class="fas fa-xmark"></i></button>
+                                        </div>
+                                    </td>
+                                    <td data-label="Create Date" class="text-nowrap"><div class="sd-cell">@(r.CREATEDATE?.ToString("dd/MM/yyyy hh:mm tt") ?? "-")</div></td>
+                                    <td data-label="Transaction ID" class="text-nowrap"><div class="sd-cell"><a class="sd-title" href="@Url.Action("GateCheck", "Dispatch", new { tx = r.TRANSACTIONID })">@r.TRANSACTIONID</a></div></td>
+                                    <td data-label="From Person"><div class="sd-cell">@r.EMPLOYEENAME</div></td>
+                                    <td data-label="To Person"><div class="sd-cell">@(string.IsNullOrWhiteSpace(r.RECEIVERNAME) ? "-" : r.RECEIVERNAME)</div></td>
+                                    <td data-label="Issue Type"><div class="sd-cell">@r.ISSUETYPENAME</div></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (Model.Waiting.Count == 0)
+                {
+                    <div class="sd-empty"><i class="far fa-folder-open"></i> No dispatch is waiting for the gate.</div>
+                }
+            }
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            var U = { pass: '@Url.Action("GatePass", "Dispatch")', reject: '@Url.Action("GateReject", "Dispatch")', list: '@listUrl' };
+            var box = document.getElementById('gcTx');
+            if (box) box.focus();
+
+            document.querySelectorAll('[data-act]').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    var act = b.dataset.act, tr = b.closest('tr');
+                    if (act === 'pass') {
+                        var tx = b.dataset.tx;
+                        SD.confirm({
+                            title: 'Allow this through the gate?', text: tx, tone: 'success', icon: 'fa-square-check', yesText: 'Allow',
+                            run: function () { return SD.post(U.pass, { tx: tx }); }
+                        }).then(function (res) { if (res && res.success) { SD.toast(res.message); setTimeout(function () { location.href = U.list; }, 800); } });
+                    } else if (act === 'reject') {
+                        SD.confirm({
+                            title: 'Reject this dispatch at the gate?', text: tr.dataset.title, tone: 'danger', icon: 'fa-xmark', yesText: 'Reject',
+                            run: function () { return SD.post(U.reject, { id: tr.dataset.id }); }
+                        }).then(function (res) { if (res && res.success) { SD.toast(res.message); setTimeout(function () { location.href = U.list; }, 800); } });
+                    }
+                });
+            });
+        })();
+    </script>
+}

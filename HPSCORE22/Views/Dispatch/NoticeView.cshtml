@@ -1,0 +1,123 @@
+@* Views/Dispatch/NoticeView.cshtml  (old YA: Pages/Dispatch/NView.aspx)
+   Details of one notice board entry: from, to, items and (when handed over) who received it. *@
+@model AlphaCare.Models.NoticeDetailsViewModel
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    var n = Model.Notice;
+    string dash(string? s) => string.IsNullOrWhiteSpace(s) ? "-" : s;
+}
+
+<style>
+    .dv-box { border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; height: 100%; background: #fff; }
+    .dv-box h6 { font-weight: 700; color: #334155; margin-bottom: 10px; }
+    .dv-box h6 i { color: #4f46e5; }
+    .dv-row { display: flex; gap: 8px; padding: 3px 0; }
+    .dv-row b { min-width: 110px; color: #475569; font-weight: 600; }
+</style>
+
+<div class="container-fluid py-3" data-smart-page>
+    <div class="card shadow-sm border-0">
+        <div class="card-header bg-primary text-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <h5 class="mb-0"><i class="fas fa-clipboard-list me-2"></i>Notice <span class="fw-bold">@(string.IsNullOrWhiteSpace(n.TRACKINGNO) ? "#" + n.ID : n.TRACKINGNO)</span></h5>
+            <button type="button" class="btn btn-sm btn-light" onclick="history.length > 1 ? history.back() : location.href='@Url.Action("NoticeReceive", "Dispatch")'">
+                <i class="fas fa-arrow-left me-1"></i>Back
+            </button>
+        </div>
+
+        <div class="card-body">
+            <div class="row g-3 mb-3">
+                <div class="col-lg-4">
+                    <div class="dv-box">
+                        <h6><i class="fas fa-envelope-open-text me-2"></i>From</h6>
+                        <div class="dv-row"><b>Type</b><span>@dash(n.DTYPENAME)</span></div>
+                        @if (n.DISPATCHTYPE == 3)
+                        {
+                            <div class="dv-row"><b>LC Amount</b><span>@(n.LCAMOUNT?.ToString("0.00")) USD</span></div>
+                        }
+                        <div class="dv-row"><b>From</b><span>@dash(n.DOCFROM)</span></div>
+                        <div class="dv-row"><b>Receive Date</b><span>@(n.RECDATE?.ToString("dd/MM/yyyy") ?? "-")</span></div>
+                        <div class="dv-row"><b>Tracking No</b><span>@dash(n.TRACKINGNO)</span></div>
+                        <div class="dv-row"><b>Mobile</b><span>@dash(n.FROMMOBILE)</span></div>
+                        <div class="dv-row"><b>Email</b><span>@dash(n.FROMEMAIL)</span></div>
+                        <div class="dv-row"><b>Address</b><span>@dash(n.FROMADDRESS)</span></div>
+                        <div class="dv-row"><b>Remarks</b><span>@dash(n.FROMREMARKS)</span></div>
+                        <div class="dv-row"><b>Entered</b><span>@(n.CREATEDATE?.ToString("dd/MM/yyyy hh:mm tt") ?? "-")</span></div>
+                    </div>
+                </div>
+                <div class="col-lg-4">
+                    <div class="dv-box">
+                        <h6><i class="fas fa-user-check me-2"></i>To</h6>
+                        <div class="dv-row"><b>Name</b><span>@dash(n.TNAME)@(string.IsNullOrWhiteSpace(n.TSTAFFID) ? "" : $" ({n.TSTAFFID})")</span></div>
+                        <div class="dv-row"><b>Location</b><span>@dash(n.TLOCATION)</span></div>
+                        <div class="dv-row"><b>Company</b><span>@dash(n.TCOMPANY)</span></div>
+                        <div class="dv-row"><b>Department</b><span>@dash(n.TDEPARTMENT)</span></div>
+                        <div class="dv-row"><b>Level</b><span>@dash(n.TLEVEL)</span></div>
+                        <div class="dv-row"><b>Mobile</b><span>@dash(n.TMOBILE)</span></div>
+                        <div class="dv-row"><b>Email</b><span>@dash(n.TEMAIL)</span></div>
+                        <div class="dv-row"><b>Address</b><span>@dash(n.TADDRESS)</span></div>
+                        <div class="dv-row"><b>Remarks</b><span>@dash(n.TREMARKS)</span></div>
+                    </div>
+                </div>
+                <div class="col-lg-4">
+                    <div class="dv-box">
+                        <h6><i class="fas fa-hand-holding me-2"></i>Handed Over</h6>
+                        @if (n.ACTIVE == 1)
+                        {
+                            <p class="text-muted mb-0"><i class="fas fa-hourglass-half me-1"></i>Waiting - not collected yet.</p>
+                        }
+                        else
+                        {
+                            <div class="dv-row"><b>Received By</b><span>@dash(n.RECEIVERNAME)@(string.IsNullOrWhiteSpace(n.RECSTAFFID) ? "" : $" ({n.RECSTAFFID})")</span></div>
+                            <div class="dv-row"><b>Company</b><span>@dash(n.RECEIVERCOMPANY)</span></div>
+                            <div class="dv-row"><b>Department</b><span>@dash(n.RECDEPARTMENT)</span></div>
+                            <div class="dv-row"><b>Mobile</b><span>@dash(n.RECMOBILE)</span></div>
+                            <div class="dv-row"><b>Email</b><span>@dash(n.RECEMAIL)</span></div>
+                            <div class="dv-row"><b>Remarks</b><span>@dash(n.RECREMARKS)</span></div>
+                            <div class="dv-row"><b>Received</b><span>@(n.RECEIVEDDATE?.ToString("dd/MM/yyyy hh:mm tt") ?? "-")</span></div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="dv-box">
+                <h6><i class="fas fa-boxes-stacked me-2"></i>Items</h6>
+                @if (Model.Items.Count == 0)
+                {
+                    <p class="text-muted mb-0">No item.</p>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light"><tr><th>SL#</th><th>Item</th><th>Quantity</th><th>Unit</th><th>Remarks</th><th>Attachment</th></tr></thead>
+                            <tbody>
+                                @for (int i = 0; i < Model.Items.Count; i++)
+                                {
+                                    var it = Model.Items[i];
+                                    <tr>
+                                        <td>@(i + 1)</td>
+                                        <td>@it.ITEMNAME</td>
+                                        <td>@(it.QUANTITY?.ToString("0.##"))</td>
+                                        <td>@it.UNIT</td>
+                                        <td>@it.NOTES</td>
+                                        <td>
+                                            @if (!string.IsNullOrWhiteSpace(it.ATTACHMENT))
+                                            {
+                                                <a href="@Url.Action("NoticeAttachment", "Dispatch", new { id = it.ID })" target="_blank" rel="noopener"><i class="fas fa-paperclip me-1"></i>@it.ATTACHMENT</a>
+                                            }
+                                            else
+                                            {
+                                                <span>-</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>

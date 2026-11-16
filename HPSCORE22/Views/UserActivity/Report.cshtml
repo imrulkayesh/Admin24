@@ -1,0 +1,185 @@
+@* Views/UserActivity/Report.cshtml - user login history (USER_LOGIN_LOG) with date-range / username / IP /
+   status filters. Filters travel in the URL (GET, bookmarkable) like the dispatch reports; "Excel" downloads
+   the same rows as CSV (?export=1), "PDF" as a Rotativa PDF (?pdf=1). Table: sort / search / paging via SD.initList. *@
+@model AlphaCare.Models.LoginReportViewModel
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = "User Login Report";
+    var f = Model.Filter;
+    string d(DateTime? v) => v?.ToString("yyyy-MM-dd") ?? "";
+
+    var q = new Dictionary<string, string?>
+    {
+        ["run"] = "1",
+        ["From"] = f.From?.ToString("yyyy-MM-dd"), ["To"] = f.To?.ToString("yyyy-MM-dd"),
+        ["Username"] = string.IsNullOrEmpty(f.Username) ? null : f.Username,
+        ["Ip"] = string.IsNullOrEmpty(f.Ip) ? null : f.Ip,
+        ["Status"] = string.IsNullOrEmpty(f.Status) ? null : f.Status
+    };
+    string link(string key) => Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(
+        Url.Action("Report", "UserActivity")!,
+        q.Concat(new[] { new KeyValuePair<string, string?>(key, "1") }).Where(kv => kv.Value != null).ToDictionary(kv => kv.Key, kv => kv.Value));
+    string excelUrl = link("export"), pdfUrl = link("pdf");
+
+    string text(object? v, string kind) => v switch
+    {
+        null => "",
+        DateTime t => t.ToString("dd/MM/yyyy hh:mm tt"),
+        decimal m => m.ToString("0.##"),
+        double x => x.ToString("0.##"),
+        _ => Convert.ToString(v) ?? ""
+    };
+    string sortKey(object? v) => v switch
+    {
+        null => "",
+        DateTime t => t.Ticks.ToString(),
+        decimal or double or int or long => Convert.ToDecimal(v).ToString(System.Globalization.CultureInfo.InvariantCulture),
+        _ => (Convert.ToString(v) ?? "").ToLowerInvariant()
+    };
+    string badge(string state) => state switch
+    {
+        "Failed" => "bg-danger-subtle text-danger",
+        "Active" => "bg-success-subtle text-success",
+        "Logged out" => "bg-secondary-subtle text-secondary",
+        _ => "bg-warning-subtle text-warning-emphasis"
+    };
+}
+
+<div class="sd-page" data-smart-page>
+    <div class="card shadow-sm border-0">
+        <div class="sd-head">
+            <h5 class="mb-0"><i class="fas fa-clock-rotate-left me-2"></i>User Login Report</h5>
+            <span class="sd-date"><i class="far fa-calendar me-1"></i>@DateTime.Today.ToString("dddd, dd MMMM yyyy")</span>
+        </div>
+
+        <div class="card-body">
+            <p class="text-muted small mb-2">
+                <i class="fas fa-circle-info me-1"></i>
+                Every login attempt: when, from which IP and device, how it ended (logout / expired) and why it failed.
+                <a href="@Url.Action("Dashboard", "UserActivity")">Open the dashboard</a>.
+            </p>
+
+            <form method="get" action="@Url.Action("Report", "UserActivity")" class="row g-2 align-items-end mb-3" autocomplete="off">
+                <input type="hidden" name="run" value="1" />
+                <div class="col-6 col-md-2">
+                    <label for="rFrom" class="form-label fw-semibold">From</label>
+                    <input type="date" id="rFrom" name="From" class="form-control" value="@d(f.From)" />
+                </div>
+                <div class="col-6 col-md-2">
+                    <label for="rTo" class="form-label fw-semibold">To</label>
+                    <input type="date" id="rTo" name="To" class="form-control" value="@d(f.To)" />
+                </div>
+                <div class="col-md-3">
+                    <label for="rUser" class="form-label fw-semibold">Username / User ID</label>
+                    <input type="text" id="rUser" name="Username" class="form-control" maxlength="100" value="@f.Username" placeholder="contains..." />
+                </div>
+                <div class="col-md-2">
+                    <label for="rIp" class="form-label fw-semibold">IP Address</label>
+                    <input type="text" id="rIp" name="Ip" class="form-control" maxlength="50" value="@f.Ip" placeholder="starts with..." />
+                </div>
+                <div class="col-md-2">
+                    <label for="rStatus" class="form-label fw-semibold">Status</label>
+                    <select id="rStatus" name="Status" class="form-select" data-native>
+                        <option value="" selected="@(f.Status == "")">ALL</option>
+                        <option value="SUCCESS" selected="@(f.Status == "SUCCESS")">Successful</option>
+                        <option value="FAILED" selected="@(f.Status == "FAILED")">Failed</option>
+                        <option value="ACTIVE" selected="@(f.Status == "ACTIVE")">Active now</option>
+                    </select>
+                </div>
+                <div class="col-md-auto d-flex gap-2">
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-magnifying-glass me-1"></i>Search</button>
+                    @if (Model.Searched && Model.Rows.Count > 0)
+                    {
+                        <a class="btn btn-outline-success" href="@excelUrl"><i class="fas fa-file-excel me-1"></i>Excel (CSV)</a>
+                        <a class="btn btn-outline-danger" href="@pdfUrl" target="_blank"><i class="fas fa-file-pdf me-1"></i>PDF</a>
+                    }
+                </div>
+            </form>
+
+            @if (!string.IsNullOrEmpty(Model.Message))
+            {
+                <div class="alert alert-warning py-2"><i class="fas fa-circle-exclamation me-1"></i>@Model.Message</div>
+            }
+
+            @if (Model.Searched)
+            {
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                    <span class="fw-semibold">@Model.Rows.Count row(s)</span>
+                    @if (Model.Truncated)
+                    {
+                        <span class="text-danger small"><i class="fas fa-triangle-exclamation me-1"></i>Only the first @Model.MaxRows rows are shown. Please narrow the filter.</span>
+                    }
+                </div>
+
+                <div class="sd-tools">
+                    <div class="input-group grow">
+                        <span class="input-group-text bg-white"><i class="fas fa-magnifying-glass text-muted"></i></span>
+                        <input type="text" class="form-control" id="sdSearch" placeholder="Search in the result..." autocomplete="off" />
+                    </div>
+                    <button type="button" class="sd-link" id="sdClear" style="display:none"><i class="fas fa-xmark me-1"></i>Clear filters</button>
+                    <button type="button" class="sd-link" id="sdResetSort" style="display:none"><i class="fas fa-arrow-rotate-left me-1"></i>Default order</button>
+                </div>
+
+                <div class="sd-pane active" id="pane-all" data-page-size="25">
+                    <div class="sd-wrap table-responsive">
+                        <table class="sd-table">
+                            <thead>
+                                <tr>
+                                    <th class="text-center">#</th>
+                                    @for (int c = 0; c < Model.Columns.Count; c++)
+                                    {
+                                        <th class="sortable text-nowrap" data-sort="c@(c)">@Model.Columns[c].Header<i class="fas fa-sort arr"></i></th>
+                                    }
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @for (int i = 0; i < Model.Rows.Count; i++)
+                                {
+                                    var row = Model.Rows[i];
+                                    var cells = Model.Columns.Select(col => { row.TryGetValue(col.Key, out var v); return v; }).ToList();
+                                    string search = string.Join(" ", cells.Select((v, k) => text(v, Model.Columns[k].Kind))).ToLowerInvariant();
+                                    string keys = string.Join(" ", cells.Select((v, c) => $"data-k-c{c}=\"{System.Text.Encodings.Web.HtmlEncoder.Default.Encode(sortKey(v))}\""));
+                                    <tr data-search="@search" data-i="@i" @Html.Raw(keys)>
+                                        <td class="text-center text-muted" data-label="#"><div class="sd-cell">@(i + 1)</div></td>
+                                        @for (int c = 0; c < cells.Count; c++)
+                                        {
+                                            var col = Model.Columns[c];
+                                            string t = text(cells[c], col.Kind);
+                                            <td data-label="@col.Header" class="@(col.Kind == "date" ? "text-nowrap" : "") @(col.Kind == "num" ? "text-end" : "")">
+                                                <div class="sd-cell">
+                                                    @if (col.Key == "STATE" && t.Length > 0)
+                                                    {
+                                                        <span class="badge @badge(t)">@t</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        @(t.Length == 0 ? "-" : t)
+                                                    }
+                                                </div>
+                                            </td>
+                                        }
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="sd-empty" data-empty="all" style="@(Model.Rows.Count == 0 ? "" : "display:none")"><i class="far fa-folder-open"></i> No data found.</div>
+                    <div class="sd-empty" data-empty="filter" style="display:none"><i class="fas fa-filter-circle-xmark"></i> No row matched your search.</div>
+                </div>
+            }
+            else if (string.IsNullOrEmpty(Model.Message))
+            {
+                <div class="text-muted"><i class="fas fa-filter me-1"></i>Choose the filters and press Search.</div>
+            }
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            if (document.getElementById('pane-all')) SD.initList();
+        })();
+    </script>
+}

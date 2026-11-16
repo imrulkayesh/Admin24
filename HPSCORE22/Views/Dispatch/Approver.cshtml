@@ -1,0 +1,220 @@
+@* Views/Dispatch/Approver.cshtml  (old YA: Pages/Dispatch/Approver.aspx)
+   Setup of DP_APPROVER for one location (old ddlBusinessCenter): who approves the dispatches of a company + location + department,
+   at which level (PRIORITY = the STATUSID the dispatch waits at) and whether it is the final approver.
+   Add / edit / delete (delete was switched on in YA; it removes the row). *@
+@model AlphaCare.Models.ApproverSetupViewModel
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = "Dispatch Approver";
+}
+
+<div class="sd-page" data-smart-page>
+    <div class="card shadow-sm border-0">
+        <div class="sd-head">
+            <h5 class="mb-0"><i class="fas fa-user-shield me-2"></i>Dispatch Approver</h5>
+            <span class="sd-date"><i class="far fa-calendar me-1"></i>@DateTime.Today.ToString("dddd, dd MMMM yyyy")</span>
+        </div>
+
+        <div class="card-body">
+            @Html.AntiForgeryToken()
+
+            <form id="fm" class="row g-2 mb-3" autocomplete="off">
+                <input type="hidden" id="fId" value="0" />
+                <div class="col-md-4">
+                    <label for="fStaff" class="form-label fw-semibold">Approver (Staff ID) <span class="text-danger">*</span></label>
+                    <input type="text" id="fStaff" class="form-control" list="dlEmp" placeholder="Type ID or name" />
+                    <div class="small text-muted mt-1" id="fEmpInfo"></div>
+                </div>
+                <div class="col-md-4">
+                    <label for="fCompany" class="form-label fw-semibold">Company <span class="text-danger">*</span></label>
+                    <select id="fCompany" class="form-select">
+                        <option value="0">-- Select --</option>
+                        @foreach (var c in Model.Companies)
+                        {
+                            <option value="@c.ID">@c.COMPANYNAME</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label for="fCenter" class="form-label fw-semibold">Location <span class="text-danger">*</span></label>
+                    <select id="fCenter" class="form-select">
+                        <option value="0">-- Select --</option>
+                        @foreach (var c in Model.BusinessCenters)
+                        {
+                            <option value="@c.ID" selected="@(c.ID == Model.CenterId)">@c.CENTERNAME</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label for="fDept" class="form-label fw-semibold">Department <span class="text-danger">*</span></label>
+                    <select id="fDept" class="form-select">
+                        <option value="0">-- Select --</option>
+                        @foreach (var d in Model.Departments)
+                        {
+                            <option value="@d.ID">@d.DEPARTMENTNAME</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-6 col-md-2">
+                    <label for="fPri" class="form-label fw-semibold">Priority <span class="text-danger">*</span></label>
+                    <input type="number" id="fPri" class="form-control" min="1" max="99" step="1" value="1" />
+                </div>
+                <div class="col-6 col-md-2 d-flex align-items-end">
+                    <div class="form-check mb-2"><input class="form-check-input" type="checkbox" id="fFinal" /><label class="form-check-label fw-semibold" for="fFinal">Final Approver</label></div>
+                </div>
+                <div class="col-md-4 d-flex align-items-end gap-2">
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-floppy-disk me-1"></i><span id="fSaveText">Save</span></button>
+                    <button type="button" class="btn btn-outline-secondary" id="fReset"><i class="fas fa-rotate me-1"></i>Refresh</button>
+                </div>
+            </form>
+            <datalist id="dlEmp"></datalist>
+
+            <!-- old ddlBusinessCenter (AutoPostBack): the list shows the approvers of one location -->
+            <form method="get" action="@Url.Action("Approver", "Dispatch")" class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                <label for="listCenter" class="fw-semibold">Approvers of</label>
+                <select id="listCenter" name="centerId" class="form-select" style="max-width:320px" onchange="this.form.submit()">
+                    @foreach (var c in Model.BusinessCenters)
+                    {
+                        <option value="@c.ID" selected="@(c.ID == Model.CenterId)">@c.CENTERNAME</option>
+                    }
+                </select>
+            </form>
+
+            <div class="sd-tools">
+                <div class="input-group grow">
+                    <span class="input-group-text bg-white"><i class="fas fa-magnifying-glass text-muted"></i></span>
+                    <input type="text" class="form-control" id="sdSearch" placeholder="Search staff, name, company, department..." autocomplete="off" />
+                </div>
+                <button type="button" class="sd-link" id="sdClear" style="display:none"><i class="fas fa-xmark me-1"></i>Clear filters</button>
+                <button type="button" class="sd-link" id="sdResetSort" style="display:none"><i class="fas fa-arrow-rotate-left me-1"></i>Default order</button>
+            </div>
+
+            <div class="sd-pane active" id="pane-all">
+                <div class="sd-wrap table-responsive">
+                    <table class="sd-table">
+                        <thead>
+                            <tr>
+                                <th class="text-center">Action</th>
+                                <th class="sortable" data-sort="staff">Staff ID<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable" data-sort="name">Name<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable" data-sort="company">Company<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable" data-sort="dept">Department<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable" data-sort="pri">Priority<i class="fas fa-sort arr"></i></th>
+                                <th>Final</th>
+                                <th>Designation</th>
+                                <th>Mobile</th>
+                                <th>Email</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{ int idx = 0; }
+                            @foreach (var a in Model.Rows)
+                            {
+                                <tr data-search="@($"{a.APPROVERID} {a.EMPLOYEENAME} {a.COMPANYNAME} {a.DEPARTMENTCODE} {a.DEPARTMENTNAME} {a.DESIGNATIONNAME}".ToLower())" data-i="@(idx++)"
+                                    data-k-staff="@((a.APPROVERID ?? "").ToLower())" data-k-name="@((a.EMPLOYEENAME ?? "").ToLower())"
+                                    data-k-company="@((a.COMPANYNAME ?? "").ToLower())" data-k-dept="@((a.DEPARTMENTCODE ?? "").ToLower())" data-k-pri="@((a.PRIORITY ?? 0).ToString("D6"))"
+                                    data-id="@a.ID" data-staff="@a.APPROVERID" data-title="@a.APPROVERID - @a.EMPLOYEENAME" data-company="@a.COMPANYID" data-center="@a.BUSINESSCENTERID"
+                                    data-dept="@a.DEPARTMENTID" data-pri="@a.PRIORITY" data-final="@(a.ISFINALAPPROVER ?? 0)">
+                                    <td class="text-center text-nowrap" data-label="Action">
+                                        <div class="sd-cell">
+                                            <button type="button" class="sd-btn" title="Edit" data-act="edit"><i class="fas fa-pen"></i></button>
+                                            <button type="button" class="sd-btn no" title="Delete" data-act="delete"><i class="fas fa-trash"></i></button>
+                                        </div>
+                                    </td>
+                                    <td data-label="Staff ID"><div class="sd-cell">@a.APPROVERID</div></td>
+                                    <td data-label="Name"><div class="sd-cell">@a.EMPLOYEENAME</div></td>
+                                    <td data-label="Company"><div class="sd-cell">@a.COMPANYNAME</div></td>
+                                    <td data-label="Department"><div class="sd-cell">@a.DEPARTMENTCODE</div></td>
+                                    <td data-label="Priority"><div class="sd-cell">@a.PRIORITY</div></td>
+                                    <td data-label="Final"><div class="sd-cell">@(a.ISFINALAPPROVER == 1 ? "Yes" : "No")</div></td>
+                                    <td data-label="Designation"><div class="sd-cell">@a.DESIGNATIONNAME</div></td>
+                                    <td data-label="Mobile" class="text-nowrap"><div class="sd-cell">@(string.IsNullOrWhiteSpace(a.OFFICEMOBILE) ? "-" : a.OFFICEMOBILE)</div></td>
+                                    <td data-label="Email"><div class="sd-cell">@(string.IsNullOrWhiteSpace(a.OFFICEMAIL) ? "-" : a.OFFICEMAIL)</div></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="sd-empty" data-empty="all" style="@(Model.Rows.Count == 0 ? "" : "display:none")"><i class="far fa-folder-open"></i> No approver at this location.</div>
+                <div class="sd-empty" data-empty="filter" style="display:none"><i class="fas fa-filter-circle-xmark"></i> No approver matched your filter.</div>
+            </div>
+            <div class="small text-muted mt-2">Priority = the approval level: a dispatch waiting at status 1 goes to the priority 1 approvers of the creator's company, location and department.</div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            SD.initList();
+            var $ = function (id) { return document.getElementById(id); };
+            var U = { save: '@Url.Action("SaveApprover", "Dispatch")', del: '@Url.Action("DeleteApprover", "Dispatch")',
+                      search: '@Url.Action("SearchEmployee", "Dispatch")', emp: '@Url.Action("GetEmployee", "Dispatch")' };
+            var listCenter = '@Model.CenterId';
+
+            function reset() {
+                $('fId').value = '0'; $('fStaff').value = ''; $('fEmpInfo').textContent = ''; $('fCompany').value = '0';
+                $('fCenter').value = listCenter; $('fDept').value = '0'; $('fPri').value = '1'; $('fFinal').checked = false; $('fSaveText').textContent = 'Save';
+            }
+
+            /* staff auto complete (old AutoCompleteExtender + tbxStaffID_TextChanged) */
+            var t = null;
+            $('fStaff').addEventListener('input', function () {
+                clearTimeout(t);
+                var q = this.value.trim();
+                if (q.length < 2) return;
+                t = setTimeout(function () {
+                    fetch(U.search + '?term=' + encodeURIComponent(q), { credentials: 'same-origin' }).then(function (r) { return r.json(); })
+                        .then(function (list) { $('dlEmp').innerHTML = list.map(function (s) { return '<option value="' + SD.esc(s) + '"></option>'; }).join(''); })
+                        .catch(function () { });
+                }, 250);
+            });
+            function loadEmp(fill) {
+                var v = $('fStaff').value.trim();
+                if (!v) { $('fEmpInfo').textContent = ''; return; }
+                fetch(U.emp + '?staffId=' + encodeURIComponent(v), { credentials: 'same-origin' }).then(function (r) { return r.json(); })
+                    .then(function (e) {
+                        if (!e.found) { $('fEmpInfo').textContent = 'Employee not found.'; return; }
+                        $('fStaff').value = e.staffId;
+                        $('fEmpInfo').textContent = [e.name, e.designation, e.mobile, e.email].filter(Boolean).join(' · ');
+                        if (fill) {   // old code filled company / location / department from the employee
+                            if (e.companyId) $('fCompany').value = e.companyId;
+                            if (e.centerId) $('fCenter').value = e.centerId;
+                            if (e.departmentId) $('fDept').value = e.departmentId;
+                        }
+                    }).catch(function () { });
+            }
+            $('fStaff').addEventListener('change', function () { loadEmp($('fId').value === '0'); });
+
+            document.querySelectorAll('.sd-btn[data-act]').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    var tr = b.closest('tr'), d = tr.dataset;
+                    if (b.dataset.act === 'edit') {
+                        $('fId').value = d.id; $('fStaff').value = d.staff || ''; $('fCompany').value = d.company || '0';
+                        $('fCenter').value = d.center || '0'; $('fDept').value = d.dept || '0'; $('fPri').value = d.pri || '1';
+                        $('fFinal').checked = d.final === '1'; $('fSaveText').textContent = 'Update';
+                        loadEmp(false); window.scrollTo({ top: 0, behavior: 'smooth' });
+                        return;
+                    }
+                    SD.confirm({
+                        title: 'Delete this approver?', text: d.title, tone: 'danger', icon: 'fa-trash', yesText: 'Delete',
+                        run: function () { return SD.post(U.del, { id: d.id }); }
+                    }).then(function (res) { if (res && res.success) { SD.toast(res.message); setTimeout(function () { location.reload(); }, 800); } });
+                });
+            });
+
+            $('fReset').addEventListener('click', reset);
+            $('fm').addEventListener('submit', function (e) {
+                e.preventDefault();
+                SD.post(U.save, {
+                    id: $('fId').value, staffId: $('fStaff').value.trim(), companyId: $('fCompany').value, centerId: $('fCenter').value,
+                    departmentId: $('fDept').value, priority: $('fPri').value, isFinal: $('fFinal').checked
+                }).then(function (res) {
+                    SD.toast(res.message, !res.success);
+                    if (res.success) setTimeout(function () { location.href = '@Url.Action("Approver", "Dispatch")?centerId=' + encodeURIComponent($('fCenter').value); }, 800);
+                }).catch(function () { SD.toast('Server error. Please try again.', true); });
+            });
+        })();
+    </script>
+}

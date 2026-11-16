@@ -1,0 +1,254 @@
+@* Views/Dispatch/Approval.cshtml  (old YA: Pages/Dispatch/Approval.aspx + ApprovalGlobal.aspx + ApprovalUpdate.aspx)
+   LIST PAGE - standard look: wwwroot/css/app-standard.css + wwwroot/js/app-standard.js (SD.initList, SD.confirm, SD.post).
+   Tabs: Waiting for Approval (approve / reject one or the ticked rows) | Approved by me (last 3 days) | Rejected (last 180 days). *@
+@model AlphaCare.Models.DispatchApprovalViewModel
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = $"({Model.Pending.Count}) Approval Pending";
+
+    var sections = new[]
+    {
+        (Id: "pending",  Title: "Waiting for Approval", Icon: "fa-hourglass-half", Color: "#f59e0b", Rows: Model.Pending),
+        (Id: "approved", Title: "Approved (last 3 days)", Icon: "fa-circle-check", Color: "#16a34a", Rows: Model.Approved),
+        (Id: "rejected", Title: "Rejected",             Icon: "fa-circle-xmark",   Color: "#dc2626", Rows: Model.Rejected)
+    };
+}
+
+<div class="sd-page" data-smart-page>
+    <div class="card shadow-sm border-0">
+
+        <div class="sd-head">
+            <h5 class="mb-0"><i class="fas fa-user-check me-2"></i>Dispatch Approval</h5>
+            <span class="sd-date"><i class="far fa-calendar me-1"></i>@DateTime.Today.ToString("dddd, dd MMMM yyyy")</span>
+        </div>
+
+        <div class="card-body">
+            @Html.AntiForgeryToken()
+
+            <div class="sd-tabs mb-3">
+                @for (int i = 0; i < sections.Length; i++)
+                {
+                    var sec = sections[i];
+                    <button type="button" class="sd-tab @(i == 0 ? "active" : "")" data-pane="@sec.Id" style="--c:@sec.Color">
+                        <i class="fas @sec.Icon"></i> @sec.Title <span class="cnt">@sec.Rows.Count</span>
+                    </button>
+                }
+            </div>
+
+            <div class="sd-tools">
+                <div class="input-group grow">
+                    <span class="input-group-text bg-white"><i class="fas fa-magnifying-glass text-muted"></i></span>
+                    <input type="text" class="form-control" id="sdSearch" placeholder="Search dispatch id, sender, receiver, issue type..." autocomplete="off" />
+                </div>
+                <div class="input-group" style="max-width:210px">
+                    <span class="input-group-text bg-white"><i class="far fa-calendar text-muted"></i></span>
+                    <input type="date" class="form-control" id="sdDate" title="Show one date only" />
+                </div>
+                <button type="button" class="sd-link" id="sdClear" style="display:none"><i class="fas fa-xmark me-1"></i>Clear filters</button>
+                <button type="button" class="sd-link" id="sdResetSort" style="display:none"><i class="fas fa-arrow-rotate-left me-1"></i>Default order</button>
+            </div>
+
+            @* bulk buttons (old ApprovalUpdate.aspx) - only for the waiting tab *@
+            @if (Model.Pending.Count > 0)
+            {
+                <div class="d-flex flex-wrap gap-2 align-items-center mb-2" id="bulkBar">
+                    <span class="small text-muted"><span id="tickCount">0</span> ticked</span>
+                    <button type="button" class="btn btn-sm btn-success" id="bulkApprove" disabled><i class="fas fa-check-double me-1"></i>Approve ticked</button>
+                    <button type="button" class="btn btn-sm btn-danger" id="bulkReject" disabled><i class="fas fa-xmark me-1"></i>Reject ticked</button>
+                </div>
+            }
+
+            @for (int s = 0; s < sections.Length; s++)
+            {
+                var sec = sections[s];
+                <div class="sd-pane @(s == 0 ? "active" : "")" id="pane-@sec.Id">
+                    <div class="sd-wrap table-responsive">
+                        <table class="sd-table">
+                            <thead>
+                                <tr>
+                                    @if (sec.Id == "pending")
+                                    {
+                                        <th class="text-center sd-noexport"><input type="checkbox" class="form-check-input" id="tickAll" title="Tick all" /></th>
+                                    }
+                                    <th class="text-center">Action</th>
+                                    <th class="sortable" data-sort="tx">Dispatch ID<i class="fas fa-sort arr"></i></th>
+                                    <th class="sortable" data-sort="date">Date<i class="fas fa-sort arr"></i></th>
+                                    <th class="sortable" data-sort="type">Issue Type<i class="fas fa-sort arr"></i></th>
+                                    <th class="sortable" data-sort="sender">Sender<i class="fas fa-sort arr"></i></th>
+                                    <th class="sortable" data-sort="rec">Receiver<i class="fas fa-sort arr"></i></th>
+                                    <th>Receiver Place</th>
+                                    <th class="sortable" data-sort="by">Created By<i class="fas fa-sort arr"></i></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @{
+                                    int idx = 0;
+                                }
+                                @foreach (var r in sec.Rows)
+                                {
+                                    string search = $"{r.TRANSACTIONID} {r.ISSUETYPENAME} {r.EMPLOYEENAME} {r.RECEIVERNAME} {r.RECEIVERMOBILE} {r.ReceiverPlace} {r.CREATEDUSER}".ToLower();
+                                    <tr data-search="@search" data-id="@r.ID" data-title="@r.TRANSACTIONID" data-i="@(idx++)"
+                                        data-date="@(r.CREATEDATE?.ToString("yyyy-MM-dd"))"
+                                        data-k-tx="@((r.TRANSACTIONID ?? "").ToLower())" data-k-date="@(r.CREATEDATE?.Ticks ?? 0)"
+                                        data-k-type="@((r.ISSUETYPENAME ?? "").ToLower())" data-k-sender="@((r.EMPLOYEENAME ?? "").ToLower())"
+                                        data-k-rec="@((r.RECEIVERNAME ?? "").ToLower())" data-k-by="@((r.CREATEDUSER ?? "").ToLower())">
+
+                                        @if (sec.Id == "pending")
+                                        {
+                                            <td class="text-center sd-noexport" data-label="Tick"><div class="sd-cell"><input type="checkbox" class="form-check-input tick" value="@r.ID" /></div></td>
+                                        }
+
+                                        <td class="text-center text-nowrap" data-label="Action">
+                                            <div class="sd-cell">
+                                                @if (sec.Id == "pending")
+                                                {
+                                                    <button type="button" class="sd-btn ok" title="Approve" data-act="approve"><i class="fas fa-check"></i></button>
+                                                    <button type="button" class="sd-btn no" title="Reject" data-act="reject"><i class="fas fa-xmark"></i></button>
+                                                }
+                                                else if (sec.Id == "rejected")
+                                                {
+                                                    <button type="button" class="sd-btn ok" title="Approve again" data-act="reapprove"><i class="fas fa-rotate-left"></i></button>
+                                                }
+                                                <button type="button" class="sd-btn" title="Items" data-act="items"><i class="fas fa-list"></i></button>
+                                                <a class="sd-btn" title="View Details" href="@Url.Action("ViewDispatch", "Dispatch", new { id = r.ID })"><i class="fas fa-eye"></i></a>
+                                            </div>
+                                        </td>
+                                        <td data-label="Dispatch ID" class="text-nowrap"><div class="sd-cell"><a class="sd-title" href="@Url.Action("ViewDispatch", "Dispatch", new { id = r.ID })">@r.TRANSACTIONID</a></div></td>
+                                        <td data-label="Date" class="text-nowrap"><div class="sd-cell">@(r.CREATEDATE?.ToString("dd/MM/yyyy hh:mm tt") ?? "-")</div></td>
+                                        <td data-label="Issue Type"><div class="sd-cell">@r.ISSUETYPENAME</div></td>
+                                        <td data-label="Sender"><div class="sd-cell">@r.EMPLOYEENAME</div></td>
+                                        <td data-label="Receiver">
+                                            <div class="sd-cell">
+                                                @(string.IsNullOrWhiteSpace(r.RECEIVERNAME) ? "-" : r.RECEIVERNAME)
+                                                @if (!string.IsNullOrWhiteSpace(r.RECEIVERMOBILE))
+                                                {
+                                                    <a class="sd-sub text-decoration-none" href="tel:@r.RECEIVERMOBILE"><i class="fas fa-phone me-1"></i>@r.RECEIVERMOBILE</a>
+                                                }
+                                            </div>
+                                        </td>
+                                        <td data-label="Receiver Place"><div class="sd-cell">@(string.IsNullOrWhiteSpace(r.ReceiverPlace) ? "-" : r.ReceiverPlace)</div></td>
+                                        <td data-label="Created By"><div class="sd-cell">@r.CREATEDUSER</div></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="sd-empty" data-empty="all" style="@(sec.Rows.Count == 0 ? "" : "display:none")">
+                        <i class="far fa-folder-open"></i> No dispatch in "@sec.Title".
+                    </div>
+                    <div class="sd-empty" data-empty="filter" style="display:none">
+                        <i class="fas fa-filter-circle-xmark"></i> No dispatch matched your filter.
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<!-- items pop-up (old #itemModal / gvItems) -->
+<div class="modal fade" id="itemModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="fas fa-boxes-stacked me-2"></i>Items - <span id="itemTitle"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                        <thead class="table-light"><tr><th>Item</th><th>Quantity</th><th>Unit</th><th>Notes</th><th>Attachment</th></tr></thead>
+                        <tbody id="itemBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            SD.initList();
+
+            var U = {
+                approve: '@Url.Action("Approve", "Dispatch")',
+                reject: '@Url.Action("Reject", "Dispatch")',
+                reapprove: '@Url.Action("ApproveRejected", "Dispatch")',
+                bulk: '@Url.Action("BulkDecision", "Dispatch")',
+                items: '@Url.Action("GetItems", "Dispatch")'
+            };
+            function reloadSoon(res) { if (res && res.success) { SD.toast(res.message); setTimeout(function () { location.reload(); }, 900); } }
+
+            /* ----- one row ----- */
+            document.querySelectorAll('.sd-btn[data-act]').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    var tr = b.closest('tr'), act = b.dataset.act, id = tr.dataset.id;
+                    if (act === 'items') { showItems(id, tr.dataset.title); return; }
+                    var o = {
+                        approve: { title: 'Approve this dispatch?', tone: 'success', icon: 'fa-check', yesText: 'Approve', url: U.approve },
+                        reject: { title: 'Reject this dispatch?', tone: 'danger', icon: 'fa-xmark', yesText: 'Reject', url: U.reject },
+                        reapprove: { title: 'Approve this rejected dispatch again?', tone: 'success', icon: 'fa-rotate-left', yesText: 'Approve', url: U.reapprove }
+                    }[act];
+                    SD.confirm({
+                        title: o.title, text: tr.dataset.title, tone: o.tone, icon: o.icon, yesText: o.yesText,
+                        reason: act === 'reapprove' ? null : { label: 'Remarks (optional)', max: 100 },
+                        run: function (remarks) { return SD.post(o.url, { id: id, remarks: remarks || '' }); }
+                    }).then(reloadSoon);
+                });
+            });
+
+            /* ----- tick boxes + bulk (old ApprovalUpdate.aspx) ----- */
+            var ticks = Array.prototype.slice.call(document.querySelectorAll('.tick'));
+            function ticked() { return ticks.filter(function (t) { return t.checked && t.closest('tr').style.display !== 'none'; }); }
+            function refreshBulk() {
+                var n = ticked().length, c = document.getElementById('tickCount');
+                if (c) c.textContent = n;
+                ['bulkApprove', 'bulkReject'].forEach(function (id) { var b = document.getElementById(id); if (b) b.disabled = n === 0; });
+            }
+            ticks.forEach(function (t) { t.addEventListener('change', refreshBulk); });
+            var all = document.getElementById('tickAll');
+            if (all) all.addEventListener('change', function () {
+                ticks.forEach(function (t) { if (t.closest('tr').style.display !== 'none') t.checked = all.checked; });
+                refreshBulk();
+            });
+            function bulk(approve) {
+                var ids = ticked().map(function (t) { return t.value; });
+                if (!ids.length) return;
+                SD.confirm({
+                    title: (approve ? 'Approve ' : 'Reject ') + ids.length + ' dispatch?', tone: approve ? 'success' : 'danger',
+                    icon: approve ? 'fa-check-double' : 'fa-xmark', yesText: approve ? 'Approve all' : 'Reject all',
+                    run: function () { return SD.post(U.bulk, { ids: ids.join(','), approve: approve ? 1 : 0 }); }
+                }).then(reloadSoon);
+            }
+            var ba = document.getElementById('bulkApprove'), br = document.getElementById('bulkReject');
+            if (ba) ba.addEventListener('click', function () { bulk(true); });
+            if (br) br.addEventListener('click', function () { bulk(false); });
+
+            /* ----- items pop-up ----- */
+            function showItems(id, title) {
+                document.getElementById('itemTitle').textContent = title;
+                var body = document.getElementById('itemBody');
+                body.innerHTML = '<tr><td colspan="5" class="text-muted">Loading...</td></tr>';
+                bootstrap.Modal.getOrCreateInstance(document.getElementById('itemModal')).show();
+                fetch(U.items + '?id=' + encodeURIComponent(id), { credentials: 'same-origin' })
+                    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+                    .then(function (list) {
+                        body.innerHTML = list.length ? list.map(function (i) {
+                            var att = i.attachmentUrl ? '<a href="' + SD.esc(i.attachmentUrl) + '" target="_blank" rel="noopener"><i class="fas fa-paperclip"></i></a>' : '-';
+                            return '<tr><td>' + SD.esc(i.name) + '</td><td>' + SD.esc(i.quantity) + '</td><td>' + SD.esc(i.unit) + '</td><td>' + SD.esc(i.notes) + '</td><td>' + att + '</td></tr>';
+                        }).join('') : '<tr><td colspan="5" class="text-muted">No item.</td></tr>';
+                    })
+                    .catch(function () { body.innerHTML = '<tr><td colspan="5" class="text-danger">Could not load the items.</td></tr>'; });
+            }
+
+            /* ----- old Timer1 (60 s): reload the list when nothing is ticked and no box is open ----- */
+            var refresher = setInterval(function () {
+                if (!document.getElementById('pane-pending')) { clearInterval(refresher); return; }     // left this page (smart navigation)
+                var busy = ticked().length || document.querySelector('.sd-overlay.show') || document.querySelector('.modal.show') ||
+                           (document.getElementById('sdSearch') || {}).value;
+                if (!busy && !document.hidden) location.reload();
+            }, 60000);
+        })();
+    </script>
+}

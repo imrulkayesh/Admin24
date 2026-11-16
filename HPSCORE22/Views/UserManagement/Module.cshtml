@@ -1,0 +1,134 @@
+@* Views/UserManagement/Module.cshtml (old YA: Module.aspx)
+   Admin24's own module list (UC_MODULE_COPY): name, URL, order, icon. Deleting a module in use fails safely. *@
+@model List<AlphaCare.Models.ModuleSetupRow>
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = "Module";
+}
+
+<div class="sd-page" data-smart-page>
+    <div class="card shadow-sm border-0">
+        <div class="sd-head">
+            <h5 class="mb-0"><i class="fas fa-cubes me-2"></i>Module</h5>
+            <span class="sd-date"><i class="far fa-calendar me-1"></i>@DateTime.Today.ToString("dddd, dd MMMM yyyy")</span>
+        </div>
+
+        <div class="card-body">
+            <p class="text-muted small mb-2"><i class="fas fa-circle-info me-1"></i>These are Admin24's own modules (the tiles of the start page). The legacy YA menu is not touched.</p>
+            @Html.AntiForgeryToken()
+
+            <form id="fm" class="row g-2 align-items-end mb-3" autocomplete="off">
+                <input type="hidden" id="fId" value="0" />
+                <div class="col-md-3">
+                    <label for="fName" class="form-label fw-semibold">Module Name <span class="text-danger">*</span></label>
+                    <input type="text" id="fName" class="form-control" maxlength="50" />
+                </div>
+                <div class="col-md-3">
+                    <label for="fUrl" class="form-label fw-semibold">URL</label>
+                    <input type="text" id="fUrl" class="form-control" maxlength="150" placeholder="e.g. Dispatch/CreateDispatch" />
+                </div>
+                <div class="col-md-2">
+                    <label for="fIcon" class="form-label fw-semibold">Icon</label>
+                    <input type="text" id="fIcon" class="form-control" maxlength="50" placeholder="e.g. fa-truck" />
+                </div>
+                <div class="col-md-1">
+                    <label for="fOrder" class="form-label fw-semibold">Order</label>
+                    <input type="text" id="fOrder" class="form-control" inputmode="numeric" maxlength="5" value="0" />
+                </div>
+                <div class="col-md-auto d-flex gap-2">
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-floppy-disk me-1"></i><span id="fSaveText">Save</span></button>
+                    <button type="button" class="btn btn-outline-secondary" id="fReset"><i class="fas fa-rotate me-1"></i>Reset</button>
+                </div>
+            </form>
+
+            <div class="sd-tools">
+                <div class="input-group grow">
+                    <span class="input-group-text bg-white"><i class="fas fa-magnifying-glass text-muted"></i></span>
+                    <input type="text" class="form-control" id="sdSearch" placeholder="Search module or URL..." autocomplete="off" />
+                </div>
+                <button type="button" class="sd-link" id="sdClear" style="display:none"><i class="fas fa-xmark me-1"></i>Clear filters</button>
+                <button type="button" class="sd-link" id="sdResetSort" style="display:none"><i class="fas fa-arrow-rotate-left me-1"></i>Default order</button>
+            </div>
+
+            <div class="sd-pane active" id="pane-all" data-page-size="25">
+                <div class="sd-wrap table-responsive">
+                    <table class="sd-table">
+                        <thead>
+                            <tr>
+                                <th class="text-center">#</th>
+                                <th class="sortable" data-sort="name">Module<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable" data-sort="url">URL<i class="fas fa-sort arr"></i></th>
+                                <th>Icon</th>
+                                <th class="sortable text-end" data-sort="order">Order<i class="fas fa-sort arr"></i></th>
+                                <th>Created By</th><th>Create Date</th><th class="text-center">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (int i = 0; i < Model.Count; i++)
+                            {
+                                var m = Model[i];
+                                <tr data-search="@(((m.MODULENAME ?? "") + " " + (m.URL ?? "")).ToLower())" data-i="@i"
+                                    data-id="@m.ID" data-name="@m.MODULENAME" data-url="@m.URL" data-icon="@m.ICON" data-order="@m.MODULEORDER"
+                                    data-k-name="@((m.MODULENAME ?? "").ToLower())" data-k-url="@((m.URL ?? "").ToLower())" data-k-order="@m.MODULEORDER">
+                                    <td class="text-center text-muted" data-label="#"><div class="sd-cell">@(i + 1)</div></td>
+                                    <td data-label="Module"><div class="sd-cell">@m.MODULENAME</div></td>
+                                    <td data-label="URL"><div class="sd-cell">@(string.IsNullOrEmpty(m.URL) ? "-" : m.URL)</div></td>
+                                    <td data-label="Icon"><div class="sd-cell">@if (!string.IsNullOrEmpty(m.ICON)) { <i class="fa @m.ICON me-1"></i> } @(m.ICON ?? "-")</div></td>
+                                    <td class="text-end" data-label="Order"><div class="sd-cell">@m.MODULEORDER</div></td>
+                                    <td data-label="Created By"><div class="sd-cell">@(m.CREATEDBY ?? "-")</div></td>
+                                    <td data-label="Create Date" class="text-nowrap"><div class="sd-cell">@(m.CREATEDATE?.ToString("dd/MM/yyyy") ?? "-")</div></td>
+                                    <td class="text-center" data-label="Action">
+                                        <div class="sd-cell d-inline-flex gap-1">
+                                            <button type="button" class="sd-btn" title="Edit" data-act="edit"><i class="fas fa-pen"></i></button>
+                                            <button type="button" class="sd-btn" title="Delete" data-act="del"><i class="fas fa-trash"></i></button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="sd-empty" data-empty="all" style="@(Model.Count == 0 ? "" : "display:none")"><i class="far fa-folder-open"></i> No module yet.</div>
+                <div class="sd-empty" data-empty="filter" style="display:none"><i class="fas fa-filter-circle-xmark"></i> No module matched your search.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            SD.initList();
+            var byId = function (id) { return document.getElementById(id); };
+            function reset() { byId('fId').value = '0'; byId('fName').value = ''; byId('fUrl').value = ''; byId('fIcon').value = ''; byId('fOrder').value = '0'; byId('fSaveText').textContent = 'Save'; }
+
+            document.querySelectorAll('.sd-btn[data-act="edit"]').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    var d = b.closest('tr').dataset;
+                    byId('fId').value = d.id; byId('fName').value = d.name || ''; byId('fUrl').value = d.url || '';
+                    byId('fIcon').value = d.icon || ''; byId('fOrder').value = d.order || '0';
+                    byId('fSaveText').textContent = 'Update'; byId('fName').focus(); window.scrollTo({ top: 0, behavior: 'smooth' });
+                });
+            });
+            document.querySelectorAll('.sd-btn[data-act="del"]').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    SD.confirm({
+                        title: 'Delete this module?', text: b.closest('tr').dataset.name, tone: 'danger', icon: 'fa-trash', yesText: 'Delete',
+                        run: function () { return SD.post('@Url.Action("DeleteModule", "UserManagement")', { id: b.closest('tr').dataset.id }); }
+                    }).then(function (res) { if (res && res.success) { SD.toast(res.message); setTimeout(function () { location.reload(); }, 700); } });
+                });
+            });
+            byId('fReset').addEventListener('click', reset);
+            byId('fm').addEventListener('submit', function (e) {
+                e.preventDefault();
+                if (!byId('fName').value.trim()) { SD.toast('Enter the Module name.', true); return; }
+                SD.post('@Url.Action("SaveModule", "UserManagement")', {
+                    id: byId('fId').value, name: byId('fName').value.trim(), url: byId('fUrl').value.trim(),
+                    icon: byId('fIcon').value.trim(), order: byId('fOrder').value || 0
+                }).then(function (res) { SD.toast(res.message, !res.success); if (res.success) setTimeout(function () { location.reload(); }, 800); })
+                  .catch(function () { SD.toast('Server error. Please try again.', true); });
+            });
+        })();
+    </script>
+}

@@ -71,6 +71,24 @@ namespace QCMS.Repositories
             return dt;
         }
 
+        /// <summary>
+        /// Port of old dalUser.CheckInactiveUserStatus(): true when the account was switched off by the
+        /// Dispatch module (ISACTIVE=0, INACTIVETYPE='Dispatch' - "Dispatch Gate check pending"), so the
+        /// login page can show the specific message instead of "Invalid Username or Password."
+        /// </summary>
+        public bool IsInactiveForDispatchGate(string username)
+        {
+            using var conn = _databaseService.GetConnection();
+
+            const string sql = @"
+        SELECT COUNT(*)
+          FROM UC_USERS U
+         WHERE U.ISACTIVE = 0 AND U.INACTIVETYPE = 'Dispatch'
+           AND UPPER(U.USERNAME) = UPPER(:Username)";
+
+            return conn.ExecuteScalar<int>(sql, new { Username = username }) > 0;
+        }
+
         public DataTable GetEmployeeInfo(string userId)
         {
             using var conn = _databaseService.GetConnection();

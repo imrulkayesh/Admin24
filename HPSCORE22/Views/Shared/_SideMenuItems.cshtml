@@ -1,11 +1,6 @@
 ﻿@* Views/Shared/_SideMenuItems.cshtml
    Draws the sidebar <li> items of the module selected on the Home page (menu tree comes from session "ModuleMenu").
-   Used by _SideBar.cshtml.
-
-   Which link is "active"?  the link whose address is the same as the page address OR the start of it, so
-   /Meeting/CreateMeeting/15 keeps  /Meeting/CreateMeeting  active.
-   A page that is not in the menu (for example ViewMeeting) can say which menu link belongs to it:
-        ViewData["MenuPath"] = "/Meeting/MeetingList";                                                  *@
+   Used by _SideBar.cshtml (page load) and HomeController.SelectModule (AJAX refresh). *@
 @using System.Text.Json
 @using AlphaCare.Models
 
@@ -17,6 +12,13 @@
         if (url.StartsWith("~")) return Url.Content(url);
         if (url.StartsWith("/")) return Url.Content("~" + url);
         return Url.Content("~/" + url);
+    }
+    // true when the menu url is the page that is open now. Works under an IIS virtual directory (PathBase), ignores ?query and a last "/"
+    bool Same(string? href, string cur)
+    {
+        if (string.IsNullOrEmpty(href) || href == "#") return false;
+        var h = href.Split('?')[0].TrimEnd('/');
+        return string.Equals(h, cur.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
     }
     string Ico(string? icon, string fallback)
     {
@@ -30,17 +32,7 @@
     int? moduleId = Context.Session.GetInt32("ModuleId");
     string moduleName = Context.Session.GetString("ModuleName") ?? "";
     string moduleIcon = Context.Session.GetString("ModuleIcon") ?? "fa-folder";
-
-    // the page address (or the menu address the page asked for)
-    string currentPath = ((ViewData["MenuPath"] as string) ?? Context.Request.Path.Value ?? "").TrimEnd('/');
-
-    bool IsHere(string? url)
-    {
-        var h = Href(url).TrimEnd('/');
-        if (h == "#" || h.Length == 0) return false;
-        return currentPath.Equals(h, StringComparison.OrdinalIgnoreCase)
-            || currentPath.StartsWith(h + "/", StringComparison.OrdinalIgnoreCase);
-    }
+    string currentPath = Context.Request.PathBase.Add(Context.Request.Path).Value ?? "";   // PathBase + Path = same form as Href()
 
     var menuJson = Context.Session.GetString("ModuleMenu");
     var tree = string.IsNullOrEmpty(menuJson)
@@ -49,7 +41,7 @@
 }
 
 <li class="nav-item">
-    <a asp-controller="Home" asp-action="Index" class="nav-link @(currentPath.Equals(Url.Action("Index", "Home") ?? "", StringComparison.OrdinalIgnoreCase) || currentPath == "" ? "active" : "")">
+    <a asp-controller="Home" asp-action="Index" class="nav-link">
         <i class="nav-icon fa-solid fa-table-cells-large"></i>
         <p>All Modules</p>
     </a>
@@ -74,7 +66,7 @@ else
     @foreach (var parent in tree)
     {
         bool hasKids = parent.Children.Count > 0;
-        bool open = parent.Children.Any(k => IsHere(k.Url));
+        bool open = parent.Children.Any(k => Same(Href(k.Url), currentPath));
 
         @if (hasKids)
         {
@@ -86,8 +78,9 @@ else
                 <ul class="nav nav-treeview">
                     @foreach (var child in parent.Children)
                     {
+                        bool isActive = Same(Href(child.Url), currentPath);
                         <li class="nav-item">
-                            <a href="@Href(child.Url)" class="nav-link @(IsHere(child.Url) ? "active" : "")">
+                            <a href="@Href(child.Url)" class="nav-link @(isActive ? "active" : "")">
                                 <i class="nav-icon @Ico(child.Icon, "fa-regular fa-circle")"></i>
                                 <p>@child.Title</p>
                             </a>
@@ -99,7 +92,7 @@ else
         else
         {
             <li class="nav-item">
-                <a href="@Href(parent.Url)" class="nav-link @(IsHere(parent.Url) ? "active" : "")">
+                <a href="@Href(parent.Url)" class="nav-link @(Same(Href(parent.Url), currentPath) ? "active" : "")">
                     <i class="nav-icon @Ico(parent.Icon, "fa-solid fa-link")"></i>
                     <p>@parent.Title</p>
                 </a>

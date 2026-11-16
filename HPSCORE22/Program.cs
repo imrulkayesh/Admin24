@@ -8,6 +8,7 @@ using AlphaCare.Interface;
 using AlphaCare.Services;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
 using QCMS.Repositories;
 using QCMS.Services;
 using RetailCare.Common;
@@ -42,6 +43,16 @@ builder.Services.AddScoped<IReportingMethods, ReportingMethods>();
 //builder.Services.AddScoped<ISetupRepository, SetupRepository>();
 builder.Services.AddScoped<IModuleRepository, ModuleRepository>();
 builder.Services.AddScoped<IMeetingRepository, MeetingRepository>();
+builder.Services.AddScoped<IDispatchRepository, DispatchRepository>();          // Dispatch module (port of YA Pages/Dispatch)
+builder.Services.AddSingleton<DispatchAttachmentStore>();                       // Dispatch item attachments (Dispatch:AttachmentFolder)
+
+builder.Services.AddScoped<IModuleDashboardProvider, MeetingDashboardProvider>();
+builder.Services.AddScoped<IModuleDashboardProvider, DispatchDashboardProvider>();
+
+builder.Services.AddScoped<ILoginLogRepository, LoginLogRepository>();          // USER_LOGIN_LOG (24/7 login activity tracking)
+builder.Services.AddScoped<IAdminSetupRepository, AdminSetupRepository>();      // Admin module (port of YA Pages/Admin)
+builder.Services.AddScoped<IUserManagementRepository, UserManagementRepository>(); // UserManagement module (port of YA Pages/UserManagement)
+
 
 builder.Services.AddSingleton<AlphaCare.Services.IEmailService, AlphaCare.Services.EmailService>();
 
@@ -50,6 +61,20 @@ builder.Services.AddHttpClient<ApiService>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(30);
 });
+
+builder.Services.AddMemoryCache();
+
+// ===============================
+// Data protection keys  (login cookies stay valid after an app restart / IIS recycle)
+// ===============================
+// live server: the app pool user needs WRITE permission on this folder and a publish must NOT delete it.
+// Best: a folder outside the website, set in appsettings.Production.json:  "DataProtection": { "KeysFolder": "D:\\AppKeys\\Admin247" }
+var keysFolder = builder.Configuration["DataProtection:KeysFolder"]
+                 ?? Path.Combine(builder.Environment.ContentRootPath, "App_Data", "DataProtection-Keys");
+Directory.CreateDirectory(keysFolder);
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(keysFolder))
+    .SetApplicationName("Admin247");
 
 // ===============================
 // Authentication (Cookie)
@@ -60,7 +85,13 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         options.LoginPath = "/Accounts/Login";
         options.AccessDeniedPath = "/Accounts/Denied";
 
-        options.ExpireTimeSpan = TimeSpan.FromMinutes(30); // match session
+        options.Cookie.Name = "Admin247.Auth";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.IsEssential = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+
+        options.ExpireTimeSpan = TimeSpan.FromMinutes(30);   // "Keep me signed in" NOT ticked (the login sets 7 days when ticked)
         options.SlidingExpiration = true;
     });
 
@@ -136,19 +167,23 @@ app.Use(async (context, next) =>
         return;
     }
 
-    if (context.User.Identity?.IsAuthenticated == true)
+    if (context.User.Identity?.IsAuthenticated == true &&
+        string.IsNullOrEmpty(context.Session.GetString("USERID")))
     {
-        var user = context.Session.GetString("USERID");
-
-        // Session expired but cookie still exists
-        if (string.IsNullOrEmpty(user))
+        // The session is gone (30 min idle / browser closed / app restarted) but the login cookie is still valid.
+        //  - "Keep me signed in" ticked  -> build the session again from the database, the user does not notice
+        //  - not ticked                  -> sign out (as before)
+        if (!LoginSession.TryRestore(context))
         {
+            LoginActivity.OnExpired(context);                       // USER_LOGIN_LOG: close the row as EXPIRED
             await context.SignOutAsync();
-            context.Response.Redirect("/Accounts/Login");
+            context.Response.Redirect(context.Request.PathBase + "/Accounts/Login");   // PathBase: the live site runs under /HPSWeb
             return;
         }
+        LoginActivity.AfterRestore(context);                        // USER_LOGIN_LOG: re-link the restored session to its row
     }
 
+    LoginActivity.TouchIfDue(context);                              // USER_LOGIN_LOG: LAST_ACTIVITY (max one write / 5 min)
     await next();
 });
 // AREA ROUTE (if you have Areas)

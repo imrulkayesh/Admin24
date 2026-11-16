@@ -21,6 +21,19 @@
     var groups = Model.Menu;
     int totalItems = groups.Sum(g => g.Children.Count > 0 ? g.Children.Count : 1);
     var palette = new[] { "#4f46e5", "#0891b2", "#d97706", "#7c3aed", "#059669", "#db2777", "#2563eb", "#0d9488" };
+
+    // ===== 4 QUICK MENUS (big tiles under the title) =====
+    // Fill this list by hand: (Title, Icon, Url, Color). Url = "~/Controller/Action". Keep 4 items (more/less also works).
+    // Example:  ("Gate Entry", "fa-solid fa-flag", "~/Dispatch/GateEntry", "#4f46e5"),
+    // While the list is EMPTY, the first 4 items of the user's own menu are shown automatically.
+    var manualQuick = new List<(string Title, string Icon, string Url, string Color)>
+    {
+    };
+    var leaves = groups.SelectMany(g => g.Children.Count > 0 ? g.Children : new List<AlphaCare.Models.SideMenuItem> { g })
+                       .Where(x => !string.IsNullOrWhiteSpace(x.Url) && x.Url != "#").ToList();
+    var quick = manualQuick.Count > 0
+        ? manualQuick
+        : leaves.Take(4).Select((x, i) => (Title: x.Title, Icon: x.Icon ?? "fa-solid fa-arrow-right", Url: x.Url ?? "#", Color: palette[i % palette.Length])).ToList();
 }
 
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -361,6 +374,622 @@
             transition: none !important;
         }
     }
+
+    /* ===== MANAGEMENT DASHBOARD (loaded by AJAX below the quick access) ===== */
+    .md-dash-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin: 10px 0 14px;
+    }
+
+        .md-dash-head h2 {
+            margin: 0;
+            font-size: 1.02rem;
+            font-weight: 600;
+        }
+
+        .md-dash-head small {
+            color: var(--md-muted);
+            font-size: .76rem;
+            margin-left: 8px;
+            font-weight: 400;
+        }
+
+    .md-btn {
+        border: 1.5px solid var(--md-border);
+        background: #fff;
+        color: var(--md-text);
+        border-radius: 10px;
+        height: 34px;
+        padding: 0 14px;
+        font: inherit;
+        font-size: .8rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: .18s;
+    }
+
+        .md-btn:hover {
+            border-color: var(--md-primary);
+            color: var(--md-primary);
+        }
+
+        .md-btn.spin i {
+            animation: mdSpin .8s linear infinite;
+        }
+
+    .md-note {
+        display: none;
+        margin-bottom: 14px;
+        padding: 10px 14px;
+        border-radius: 12px;
+        background: #fffbeb;
+        border: 1px solid #fde68a;
+        color: #92400e;
+        font-size: .84rem;
+    }
+
+        .md-note.show {
+            display: block;
+        }
+
+    .md-stat-grid {
+        display: grid;
+        grid-template-columns: repeat(3,minmax(0,1fr));
+        gap: 14px;
+    }
+
+    .md-sc {
+        --sc: #4f46e5;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        background: #fff;
+        border: 1px solid var(--md-border);
+        border-radius: 16px;
+        padding: 14px 16px;
+        text-decoration: none;
+        color: inherit;
+        position: relative;
+        overflow: hidden;
+        animation: mdRise .45s ease both;
+        transition: transform .2s, box-shadow .2s;
+    }
+
+        .md-sc::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background: var(--sc);
+        }
+
+    a.md-sc:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 14px 26px -16px rgba(30,41,59,.45);
+        color: inherit;
+    }
+
+    .md-sc .si {
+        width: 44px;
+        height: 44px;
+        flex: none;
+        border-radius: 13px;
+        display: grid;
+        place-items: center;
+        color: var(--sc);
+        font-size: 1.15rem;
+        background: color-mix(in srgb, var(--sc) 12%, white);
+    }
+
+    .md-sc .sv {
+        font-size: 1.55rem;
+        font-weight: 700;
+        line-height: 1.1;
+    }
+
+    .md-sc .st {
+        font-size: .78rem;
+        font-weight: 600;
+        color: var(--md-muted);
+    }
+
+    .md-sc .ss {
+        font-size: .72rem;
+        color: #94a3b8;
+        margin-top: 1px;
+    }
+
+    .md-chart-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit,minmax(320px,1fr));
+        gap: 16px;
+        margin-top: 16px;
+    }
+
+    .md-panel {
+        background: #fff;
+        border: 1px solid var(--md-border);
+        border-radius: 18px;
+        padding: 16px 18px;
+        animation: mdRise .5s ease both;
+        min-width: 0;
+    }
+
+        .md-panel h3 {
+            margin: 0 0 12px;
+            font-size: .92rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+    .md-chart-box {
+        position: relative;
+        height: 250px;
+    }
+
+    .md-empty-s {
+        display: none;
+        height: 100%;
+        align-items: center;
+        justify-content: center;
+        color: #94a3b8;
+        font-size: .85rem;
+    }
+
+    .md-fbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 7px 0;
+        font-size: .78rem;
+    }
+        /* fallback when Chart.js is blocked */
+        .md-fbar span.l {
+            width: 38%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: var(--md-muted);
+        }
+
+        .md-fbar span.b {
+            height: 10px;
+            border-radius: 6px;
+            background: var(--c,#6366f1);
+            display: block;
+        }
+
+        .md-fbar b {
+            font-weight: 600;
+        }
+
+    .md-two {
+        display: grid;
+        grid-template-columns: minmax(0,2fr) minmax(0,1fr);
+        gap: 16px;
+        margin-top: 16px;
+    }
+
+    .md-rec {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 8px;
+        border-radius: 12px;
+        text-decoration: none;
+        color: inherit;
+        transition: background .15s;
+    }
+
+        .md-rec:hover {
+            background: #f1f5f9;
+            color: inherit;
+        }
+
+        .md-rec + .md-rec {
+            border-top: 1px solid #f1f5f9;
+        }
+
+        .md-rec .ri {
+            width: 38px;
+            height: 38px;
+            border-radius: 11px;
+            flex: none;
+            display: grid;
+            place-items: center;
+            color: var(--rc);
+            background: color-mix(in srgb, var(--rc) 12%, white);
+        }
+
+        .md-rec .rt {
+            font-weight: 600;
+            font-size: .86rem;
+            line-height: 1.25;
+        }
+
+        .md-rec .rs {
+            font-size: .74rem;
+            color: var(--md-muted);
+        }
+
+        .md-rec .rb {
+            margin-left: auto;
+            text-align: right;
+            flex: none;
+        }
+
+    .md-pill {
+        display: inline-block;
+        font-size: .68rem;
+        font-weight: 700;
+        padding: 3px 10px;
+        border-radius: 999px;
+        color: var(--rc);
+        background: color-mix(in srgb, var(--rc) 13%, white);
+    }
+
+    .md-qa {
+        display: grid;
+        grid-template-columns: repeat(auto-fill,minmax(130px,1fr));
+        gap: 10px;
+    }
+
+        .md-qa a {
+            --ac: #4f46e5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 7px;
+            padding: 14px 8px;
+            border-radius: 14px;
+            text-align: center;
+            text-decoration: none;
+            color: var(--md-text);
+            font-size: .78rem;
+            font-weight: 600;
+            border: 1px solid var(--md-border);
+            background: #fff;
+            transition: transform .18s, box-shadow .18s, border-color .18s;
+        }
+
+            .md-qa a i {
+                width: 38px;
+                height: 38px;
+                display: grid;
+                place-items: center;
+                border-radius: 12px;
+                color: #fff;
+                background: var(--ac);
+            }
+
+            .md-qa a:hover {
+                transform: translateY(-3px);
+                border-color: var(--ac);
+                box-shadow: 0 12px 22px -16px var(--ac);
+                color: var(--ac);
+            }
+
+    .md-skel {
+        background: linear-gradient(90deg,#eef1f6 25%,#f8fafc 37%,#eef1f6 63%);
+        background-size: 400% 100%;
+        animation: mdShim 1.3s ease infinite;
+        border-radius: 16px;
+    }
+
+    .md-err {
+        text-align: center;
+        padding: 26px;
+        color: var(--md-muted);
+        background: #fff;
+        border: 1px dashed #cbd5e1;
+        border-radius: 16px;
+    }
+
+    @@keyframes mdSpin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    @@keyframes mdShim {
+        0% {
+            background-position: 100% 50%;
+        }
+
+        100% {
+            background-position: 0 50%;
+        }
+    }
+
+    @@media (max-width: 900px) {
+        .md-two {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @@media (max-width: 700px) {
+        .md-stat-grid {
+            grid-template-columns: repeat(2,minmax(0,1fr));
+        }
+    }
+
+    @@media (max-width: 480px) {
+        .md-chart-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .md-sc {
+            padding: 12px;
+            flex-direction: column;
+            align-items: flex-start;
+        }
+    }
+
+    /* ===== v3: compact title bar + quick menu tiles + more interaction ===== */
+    .md-hero {
+        padding: 10px 18px;
+        border-radius: 14px;
+        gap: 10px;
+        box-shadow: 0 10px 22px -14px rgba(79,70,229,.7);
+    }
+
+        .md-hero::before {
+            width: 150px;
+            height: 150px;
+            right: -50px;
+            top: -80px;
+        }
+
+        .md-hero::after {
+            display: none;
+        }
+
+        .md-hero .ico {
+            width: 38px;
+            height: 38px;
+            border-radius: 11px;
+            font-size: 1.05rem;
+        }
+
+    .md-hero-left {
+        gap: 12px;
+    }
+
+    .md-hero h1 {
+        font-size: 1.05rem;
+        margin: 0;
+        line-height: 1.2;
+    }
+
+    .md-hero p {
+        font-size: .74rem;
+    }
+
+    .md-stat {
+        padding: 4px 12px;
+        min-width: 0;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+    }
+
+        .md-stat b {
+            display: inline;
+            font-size: 1rem;
+        }
+
+        .md-stat span {
+            font-size: .62rem;
+        }
+
+    .md-crumb {
+        margin-bottom: 10px;
+        font-size: .82rem;
+    }
+
+    .md-qm {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0,1fr));
+        gap: 12px;
+        margin-top: 14px;
+    }
+
+    .md-qt {
+        --qc: #4f46e5;
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 14px 16px;
+        border-radius: 16px;
+        background: #fff;
+        border: 1px solid var(--md-border);
+        text-decoration: none;
+        color: var(--md-text);
+        animation: mdRise .5s ease both;
+        transition: transform .22s, box-shadow .22s, border-color .22s;
+    }
+
+        .md-qt::before {
+            content: "";
+            position: absolute;
+            inset: 0 auto 0 0;
+            width: 4px;
+            background: var(--qc);
+            transition: width .22s;
+        }
+
+        .md-qt::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: -60%;
+            width: 40%;
+            height: 100%;
+            transform: skewX(-20deg);
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,.75), transparent);
+            transition: left .6s;
+        }
+
+        .md-qt .qi {
+            width: 46px;
+            height: 46px;
+            flex: none;
+            display: grid;
+            place-items: center;
+            border-radius: 14px;
+            font-size: 1.2rem;
+            color: #fff;
+            background: linear-gradient(135deg, var(--qc), color-mix(in srgb, var(--qc) 60%, #000));
+            box-shadow: 0 8px 16px -8px var(--qc);
+            transition: transform .25s;
+        }
+
+        .md-qt .qx {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+            .md-qt .qx b {
+                font-size: .92rem;
+                font-weight: 600;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            .md-qt .qx small {
+                font-size: .72rem;
+                color: var(--md-muted);
+                transition: color .2s;
+            }
+
+                .md-qt .qx small i {
+                    font-size: .62rem;
+                    margin-left: 2px;
+                    transition: transform .2s;
+                }
+
+        .md-qt:hover {
+            transform: translateY(-4px);
+            border-color: var(--qc);
+            box-shadow: 0 16px 28px -16px var(--qc);
+            color: var(--md-text);
+        }
+
+            .md-qt:hover::before {
+                width: 7px;
+            }
+
+            .md-qt:hover::after {
+                left: 120%;
+            }
+
+            .md-qt:hover .qi {
+                transform: rotate(-8deg) scale(1.1);
+            }
+
+            .md-qt:hover .qx small {
+                color: var(--qc);
+            }
+
+                .md-qt:hover .qx small i {
+                    transform: translateX(4px);
+                }
+
+        .md-qt:active {
+            transform: translateY(-1px) scale(.98);
+        }
+
+    /* menu cards: click the title to fold / unfold */
+    .md-card-head {
+        cursor: pointer;
+        user-select: none;
+    }
+
+        .md-card-head .chv {
+            font-size: .7rem;
+            color: var(--md-muted);
+            transition: transform .25s;
+        }
+
+    .md-card.collapsed .chv {
+        transform: rotate(-90deg);
+    }
+
+    .md-card .md-links {
+        max-height: 900px;
+        overflow: hidden;
+        transition: max-height .3s ease, padding .3s ease, opacity .25s;
+    }
+
+    .md-card.collapsed .md-links {
+        max-height: 0;
+        padding-top: 0;
+        padding-bottom: 0;
+        opacity: 0;
+    }
+
+    .md-search input:focus {
+        width: 100%;
+    }
+
+    .md-search {
+        transition: width .25s;
+    }
+
+        .md-search:focus-within {
+            width: 340px;
+        }
+
+    .md-sc .sv {
+        font-variant-numeric: tabular-nums;
+    }
+
+    a.md-sc:active, .md-qa a:active {
+        transform: scale(.98);
+    }
+
+    .md-panel {
+        transition: box-shadow .22s, transform .22s;
+    }
+
+        .md-panel:hover {
+            box-shadow: 0 14px 26px -18px rgba(30,41,59,.4);
+        }
+
+    @@media (max-width: 900px) {
+        .md-qm {
+            grid-template-columns: repeat(2, minmax(0,1fr));
+        }
+    }
+
+    @@media (max-width: 420px) {
+        .md-qt {
+            padding: 10px;
+            gap: 8px;
+        }
+
+            .md-qt .qi {
+                width: 38px;
+                height: 38px;
+            }
+
+        .md-hero p {
+            display: none;
+        }
+    }
 </style>
 
 <main class="app-main">
@@ -381,7 +1010,7 @@
                     <div class="ico"><i class="@Ico(Model.Module.ICON, "fa fa-folder")"></i></div>
                     <div>
                         <h1>@Model.Module.MODULENAME</h1>
-                        <p>Welcome to the @Model.Module.MODULENAME dashboard. Choose a menu from the left sidebar or below.</p>
+                        <p>Choose a menu below or from the left sidebar.</p>
                     </div>
                 </div>
                 <div class="md-stats">
@@ -390,12 +1019,27 @@
                 </div>
             </section>
 
+            <!-- 4 QUICK MENUS -->
+        @*     @if (quick.Count > 0)
+            {
+                <div class="md-qm">
+                    @for (int q = 0; q < quick.Count; q++)
+                    {
+                        var t = quick[q];
+                        <a class="md-qt" href="@Href(t.Url)" style="--qc:@t.Color; animation-delay:@(q * 70)ms">
+                            <span class="qi"><i class="@Ico(t.Icon, "fa-solid fa-arrow-right")"></i></span>
+                            <span class="qx"><b>@t.Title</b><small>Open <i class="fas fa-arrow-right"></i></small></span>
+                        </a>
+                    }
+                </div>
+            } *@
+
             <!-- QUICK ACCESS -->
-            <div class="md-bar">
-                <h2><i class="fas fa-bolt" style="color:#f59e0b;margin-right:6px"></i>Quick Access</h2>
+           @*  <div class="md-bar">
+                <h2><i class="fas fa-bolt" style="color:#f59e0b;margin-right:6px"></i>Quick Access <button type="button" class="md-btn" id="mdToggleAll" style="margin-left:10px;height:28px;font-size:.72rem"><i class="fas fa-angles-up"></i> Collapse all</button></h2>
                 <div class="md-search">
                     <i class="fas fa-magnifying-glass"></i>
-                    <input type="text" id="mdSearch" placeholder="Search menu..." autocomplete="off" />
+                    <input type="text" id="mdSearch" placeholder="Search menu...   ( press / )" autocomplete="off" />
                 </div>
             </div>
 
@@ -411,11 +1055,12 @@
                     var color = palette[i % palette.Length];
                     var links = g.Children.Count > 0 ? g.Children : new List<AlphaCare.Models.SideMenuItem> { g };
 
-                    <div class="md-card" style="--gc:@color; animation-delay:@(i * 50)ms">
+                    <div class="md-card" data-g="@i" style="--gc:@color; animation-delay:@(i * 50)ms">
                         <div class="md-card-head">
                             <span class="gi"><i class="@Ico(g.Icon, "fa-solid fa-folder-open")"></i></span>
                             <h3>@g.Title</h3>
                             <span class="cnt">@links.Count</span>
+                            <i class="fas fa-chevron-down chv"></i>
                         </div>
                         <div class="md-links">
                             @foreach (var c in links)
@@ -429,12 +1074,64 @@
                 }
 
                 <div class="md-empty" id="mdNone"><i class="fas fa-magnifying-glass"></i> No menu matched your search.</div>
+            </div> *@
+
+            <!-- MANAGEMENT DASHBOARD : filled by /Home/ModuleDashboardData (no page reload) -->
+            <div class="md-dash-head">
+                <h2><i class="fas fa-chart-pie" style="color:#4f46e5;margin-right:6px"></i>@Model.Module.MODULENAME Dashboard<small id="mdUpdated"></small></h2>
+                <button type="button" class="md-btn" id="mdRefresh"><i class="fas fa-rotate"></i> Refresh</button>
+            </div>
+            <div class="md-note" id="mdNote"></div>
+
+            <div id="mdDash" data-url="@Url.Action("ModuleDashboardData", "Home", new { id = Model.Module.ID })">
+                <div class="md-stat-grid" id="mdStats">
+                    @for (int s = 0; s < 6; s++)
+                    {
+                        <div class="md-skel" style="height:78px"></div>
+                    }
+                </div>
+                <div class="md-chart-grid" id="mdCharts"></div>
+                <div class="md-two" id="mdBottom" style="display:none">
+                    <div class="md-panel"><h3><i class="fas fa-clock-rotate-left" style="color:#7c3aed"></i><span id="mdRecTitle">Recent Activities</span></h3><div id="mdRecent"></div></div>
+                    <div class="md-panel"><h3><i class="fas fa-bolt" style="color:#f59e0b"></i>Quick Actions</h3><div class="md-qa" id="mdActions"></div></div>
+                </div>
             </div>
 
         </div>
     </div>
 </main>
 
+<script>
+    /* fold / unfold menu cards (remembered), "/" focuses the search box */
+    (function () {
+        var KEY = 'mdFold_@Model.Module.ID', saved = {};
+        try { saved = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { }
+        var cards = document.querySelectorAll('#mdGroups .md-card');
+        function store() { try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch (e) { } }
+        function label() {
+            var all = document.querySelectorAll('#mdGroups .md-card.collapsed').length === cards.length, b = document.getElementById('mdToggleAll');
+            if (b) b.innerHTML = all ? '<i class="fas fa-angles-down"></i> Expand all' : '<i class="fas fa-angles-up"></i> Collapse all';
+        }
+        cards.forEach(function (c) {
+            if (saved[c.dataset.g]) c.classList.add('collapsed');
+            c.querySelector('.md-card-head').addEventListener('click', function () {
+                c.classList.toggle('collapsed'); saved[c.dataset.g] = c.classList.contains('collapsed') ? 1 : 0; store(); label();
+            });
+        });
+        var all = document.getElementById('mdToggleAll');
+        if (all) all.addEventListener('click', function () {
+            var collapse = document.querySelectorAll('#mdGroups .md-card.collapsed').length !== cards.length;
+            cards.forEach(function (c) { c.classList.toggle('collapsed', collapse); saved[c.dataset.g] = collapse ? 1 : 0; });
+            store(); label();
+        });
+        label();
+        document.addEventListener('keydown', function (e) {
+            if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test((document.activeElement || {}).tagName || '')) {
+                e.preventDefault(); var i = document.getElementById('mdSearch'); if (i) i.focus();
+            }
+        });
+    })();
+</script>
 <script>
     (function () {
         var input = document.getElementById('mdSearch');
@@ -449,8 +1146,123 @@
                     if (ok) { any = true; shown++; }
                 });
                 card.classList.toggle('hide', !any);
+                if (q && any) card.classList.remove('collapsed');
             });
             document.getElementById('mdNone').classList.toggle('show', q && shown === 0);
         });
+    })();
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" defer></script>
+<script>
+    /* Module dashboard: one fetch -> stat cards, charts, recent list, quick actions. Works with or without Chart.js. */
+    (function () {
+        var box = document.getElementById('mdDash'); if (!box) return;
+        var BASE = box.getAttribute('data-url'), DBG = location.search.indexOf('debug=1') >= 0, charts = {}, busy = false;
+        function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+        function camel(o) {                                                                        // server may send PascalCase (Program.cs: PropertyNamingPolicy = null) -> make it camelCase
+            if (Array.isArray(o)) return o.map(camel);
+            if (o && typeof o === 'object') { var r = {}; Object.keys(o).forEach(function (k) { r[k.charAt(0).toLowerCase() + k.slice(1)] = camel(o[k]); }); return r; }
+            return o;
+        }
+        function color(c) { return /^#[0-9a-fA-F]{3,8}$/.test(c || '') ? c : '#4f46e5'; }       // colours come from the server -> accept only hex
+        function href(u) { return u && u !== '#' ? ' href="' + esc(u) + '"' : ''; }
+
+        function renderStats(list) {
+            document.getElementById('mdStats').innerHTML = list.map(function (s, i) {
+                var tag = s.url && s.url !== '#' ? 'a' : 'div';
+                return '<' + tag + ' class="md-sc"' + (tag === 'a' ? href(s.url) : '') + ' style="--sc:' + color(s.color) + ';animation-delay:' + (i * 40) + 'ms">' +
+                    '<span class="si"><i class="' + esc(s.icon) + '"></i></span><div><div class="sv">' + esc(s.value) + '</div><div class="st">' + esc(s.title) + '</div>' +
+                    (s.sub ? '<div class="ss">' + esc(s.sub) + '</div>' : '') + '</div></' + tag + '>';
+            }).join('');
+            countUp();
+        }
+        function countUp() {                                                                       // numbers roll up from 0
+            if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+            document.querySelectorAll('#mdStats .sv').forEach(function (el) {
+                var n = Number(el.textContent); if (!isFinite(n) || n <= 0 || n > 100000) return;
+                var t0 = performance.now(), dur = 650;
+                (function step(t) { var k = Math.min(1, (t - t0) / dur); el.textContent = Math.round(n * (1 - Math.pow(1 - k, 3))); if (k < 1) requestAnimationFrame(step); })(t0);
+            });
+        }
+
+        function fallbackBars(c, holder) {                                                         // no Chart.js (CDN blocked): simple CSS bars
+            var data = c.series[0] ? c.series[0].data : [], max = Math.max.apply(null, data.concat([1]));
+            holder.innerHTML = '<div style="max-height:250px;overflow:auto">' + c.labels.map(function (l, i) {
+                var col = c.colors[i] || c.colors[0] || '#6366f1';
+                return '<div class="md-fbar"><span class="l">' + esc(l) + '</span><span class="b" style="--c:' + color(col) + ';width:' + Math.max(2, data[i] / max * 52) + '%"></span><b>' + data[i] + '</b></div>';
+            }).join('') + '</div>';
+        }
+
+        function renderCharts(list) {
+            if (!window.Chart && document.readyState !== 'complete') {                                // Chart.js (defer) is still downloading
+                window.addEventListener('load', function () { renderCharts(list); }, { once: true }); return;
+            }
+            var wrap = document.getElementById('mdCharts');
+            Object.keys(charts).forEach(function (k) { try { charts[k].destroy(); } catch (e) { } }); charts = {};
+            wrap.innerHTML = list.map(function (c) {
+                return '<div class="md-panel"><h3><i class="fas fa-chart-simple" style="color:#4f46e5"></i>' + esc(c.title) + '</h3><div class="md-chart-box" id="box_' + esc(c.id) + '"><canvas id="cv_' + esc(c.id) + '"></canvas><div class="md-empty-s">No data yet</div></div></div>';
+            }).join('');
+            list.forEach(function (c) {
+                var holder = document.getElementById('box_' + c.id), data = c.series[0] ? c.series[0].data : [];
+                if (!data.some(function (v) { return v > 0; })) { holder.querySelector('canvas').style.display = 'none'; holder.querySelector('.md-empty-s').style.display = 'flex'; return; }
+                if (!window.Chart) { fallbackBars(c, holder); return; }
+                var dn = c.type === 'doughnut', h = c.type === 'hbar', base = color(c.colors[0]);
+                var cols = c.colors.length > 1 ? c.colors.map(color) : data.map(function () { return base; });
+                charts[c.id] = new Chart(document.getElementById('cv_' + c.id), {
+                    type: dn ? 'doughnut' : (c.type === 'line' ? 'line' : 'bar'),
+                    data: { labels: c.labels, datasets: c.series.map(function (s) {
+                        return { label: s.label, data: s.data, backgroundColor: c.type === 'line' ? base + '33' : cols, borderColor: c.type === 'line' ? base : undefined,
+                                 borderWidth: dn ? 2 : (c.type === 'line' ? 2 : 0), borderRadius: dn ? 0 : 6, fill: c.type === 'line', tension: .35, maxBarThickness: 34 };
+                    }) },
+                    options: {
+                        responsive: true, maintainAspectRatio: false, indexAxis: h ? 'y' : 'x', cutout: dn ? '62%' : undefined,
+                        plugins: { legend: { display: dn, position: 'bottom', labels: { usePointStyle: true, boxWidth: 8 } },
+                                   tooltip: { callbacks: { label: function (ctx) { return ' ' + ctx.parsed[dn ? 'x' : (h ? 'x' : 'y')] + (c.unit ? ' ' + c.unit : ''); } } } },
+                        scales: dn ? {} : { x: { grid: { display: h }, ticks: { precision: 0 } }, y: { beginAtZero: true, grid: { display: !h }, ticks: { precision: 0 } } }
+                    }
+                });
+            });
+        }
+
+        function renderBottom(d) {
+            var show = (d.recent && d.recent.length) || (d.actions && d.actions.length);
+            document.getElementById('mdBottom').style.display = show ? '' : 'none';
+            document.getElementById('mdRecTitle').textContent = d.recentTitle || 'Recent Activities';
+            document.getElementById('mdRecent').innerHTML = (d.recent && d.recent.length) ? d.recent.map(function (r) {
+                var c = color(r.statusColor);
+                return '<a class="md-rec"' + href(r.url) + ' style="--rc:' + c + '"><span class="ri"><i class="' + esc(r.icon) + '"></i></span><div><div class="rt">' + esc(r.title) +
+                    '</div><div class="rs">' + esc(r.sub) + '</div></div><div class="rb">' + (r.status ? '<span class="md-pill">' + esc(r.status) + '</span>' : '') +
+                    (r.meta ? '<div class="rs" style="margin-top:3px">' + esc(r.meta) + '</div>' : '') + '</div></a>';
+            }).join('') : '<div class="md-err" style="border:0">No recent activity.</div>';
+            document.getElementById('mdActions').innerHTML = (d.actions || []).map(function (a) {
+                return '<a' + href(a.url) + ' style="--ac:' + color(a.color) + '"><i class="' + esc(a.icon) + '"></i>' + esc(a.title) + '</a>';
+            }).join('');
+        }
+
+        function url(fresh) {                                                                      // /Home/ModuleDashboardData/5 has no '?' yet
+            var q = []; if (DBG) q.push('debug=1'); if (fresh) q.push('refresh=1');
+            return BASE + (q.length ? (BASE.indexOf('?') < 0 ? '?' : '&') + q.join('&') : '');
+        }
+        function load(force) {
+            if (busy) return; busy = true;
+            var btn = document.getElementById('mdRefresh'); btn.classList.add('spin');
+            fetch(url(force === true), { credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+                .then(function (r) { if (!r.ok) return r.json().catch(function () { return {}; }).then(function (j) { throw new Error(j.detail || j.Detail || r.status); }); return r.json(); })
+                .then(function (d) {
+                    d = camel(d);
+                    renderStats(d.stats || []); renderCharts(d.charts || []); renderBottom(d);
+                    var n = document.getElementById('mdNote'); n.textContent = d.note || ''; n.classList.toggle('show', !!d.note);
+                    document.getElementById('mdUpdated').textContent = 'Updated ' + (d.updatedAt || '');
+                })
+                .catch(function (e) {
+                    document.getElementById('mdStats').innerHTML = '<div class="md-err" style="grid-column:1/-1"><i class="fas fa-triangle-exclamation"></i> Could not load the dashboard. Press Refresh to try again.' + (isNaN(e.message) ? '<br><small>' + esc(e.message) + '</small>' : '') + '</div>';
+                })
+                .finally(function () { busy = false; btn.classList.remove('spin'); });
+        }
+        document.getElementById('mdRefresh').addEventListener('click', function () { load(true); });          // button = fresh numbers
+        load();
+        setInterval(function () { if (!document.hidden) load(); }, 120000);                         // quiet refresh every 2 minutes
+        document.addEventListener('visibilitychange', function () { if (!document.hidden) load(); });
     })();
 </script>
