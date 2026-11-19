@@ -1,0 +1,240 @@
+@* Views/Service/NewService.cshtml  (old YA: Pages/Service/NewService.aspx)
+   One open request per user (SC_SERVICEREQUEST.ISOPEN = 1) collects the items. "Save" sends the request for approval.
+   Items are added / changed at once (AJAX). Item delete stays off (switched off in YA). *@
+@model AlphaCare.Models.NewServiceViewModel
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = "New Service";
+    var initItems = Model.Items.Select(i => new
+    {
+        id = i.ID,
+        subject = i.SUBJECT,
+        quantity = i.QUANTITY,
+        remarks = i.REMARKS,
+        attachment = string.IsNullOrWhiteSpace(i.ATTACHMENT) ? null : i.ATTACHMENT,
+        attachmentUrl = string.IsNullOrWhiteSpace(i.ATTACHMENT) ? null : Url.Action("Attachment", "Service", new { id = i.ID })
+    });
+}
+
+<style>
+    .sv-box { border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; background: #fff; }
+    .sv-box h6 { font-weight: 700; color: #334155; margin-bottom: 12px; }
+    .sv-box h6 i { color: #4f46e5; }
+    .sv-items td, .sv-items th { vertical-align: middle; }
+    @@media (max-width: 767px) {
+        .sv-items thead { display: none; }
+        .sv-items tr { display: block; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 10px; padding: 6px; }
+        .sv-items td { display: flex; gap: 8px; align-items: center; border: 0; padding: 4px 6px; }
+        .sv-items td::before { content: attr(data-label); font-weight: 600; min-width: 80px; color: #475569; }
+    }
+</style>
+
+<div class="container-fluid py-3" data-smart-page>
+    <div class="card shadow-sm border-0">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-screwdriver-wrench me-2"></i>New Service Request</h5>
+            <a class="btn btn-sm btn-light" href="@Url.Action("MyServiceRequest", "Service")"><i class="fas fa-clipboard-list me-1"></i>My Requests</a>
+        </div>
+
+        <div class="card-body">
+            @Html.AntiForgeryToken()
+            <div id="svMsg" class="alert d-none"></div>
+
+            <!-- ============ SERVICE CENTER ============ -->
+            <div class="sv-box mb-3">
+                <h6><i class="fas fa-building me-2"></i>Service Center</h6>
+                <div class="row g-2">
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold" for="bCenter">Location <span class="text-danger">*</span></label>
+                        <select id="bCenter" class="form-select">
+                            <option value="0">-- Select --</option>
+                            @foreach (var c in Model.BusinessCenters)
+                            {
+                                <option value="@c.ID" selected="@(c.ID == Model.CenterId)">@c.CENTERNAME</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold" for="sCenter">Service Center <span class="text-danger">*</span></label>
+                        <select id="sCenter" class="form-select"><option value="0">-- Select --</option></select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold" for="sCategory">Service Category <span class="text-danger">*</span></label>
+                        <select id="sCategory" class="form-select"><option value="0">Select</option></select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold" for="sMachine">Outlet / Machine</label>
+                        <select id="sMachine" class="form-select">
+                            <option value="0">Select</option>
+                            @foreach (var m in Model.Machines)
+                            {
+                                <option value="@m.ID">@m.NAME</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============ ITEMS ============ -->
+            <div class="sv-box mb-3">
+                <h6><i class="fas fa-list-check me-2"></i>Service Details</h6>
+                <div class="row g-2 align-items-end mb-2">
+                    <div class="col-md-4">
+                        <label class="form-label fw-semibold" for="iSubject">Subject <span class="text-danger">*</span></label>
+                        <input type="text" id="iSubject" class="form-control" list="dlSubject" maxlength="100" autocomplete="off" placeholder="Type the problem / service" />
+                        <datalist id="dlSubject"></datalist>
+                    </div>
+                    <div class="col-6 col-md-1">
+                        <label class="form-label fw-semibold" for="iQty">Quantity</label>
+                        <input type="text" id="iQty" class="form-control" inputmode="numeric" value="1" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold" for="iRemarks">Remarks</label>
+                        <input type="text" id="iRemarks" class="form-control" maxlength="150" />
+                    </div>
+                    @if (Model.AttachmentsEnabled)
+                    {
+                        <div class="col-md-2">
+                            <label class="form-label fw-semibold" for="iFile">Attachment</label>
+                            <input type="file" id="iFile" class="form-control" />
+                        </div>
+                    }
+                    <div class="col-md-2">
+                        <button type="button" class="btn btn-success w-100" id="btnAddItem"><i class="fas fa-plus me-1"></i>Add Item</button>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm sv-items mb-0">
+                        <thead class="table-light"><tr><th>SL#</th><th>Subject</th><th style="width:110px">Quantity</th><th>Remarks</th><th>Attachment</th><th class="text-center">Action</th></tr></thead>
+                        <tbody id="itemRows"></tbody>
+                    </table>
+                    <div class="text-muted small py-2" id="noItems">No item yet.</div>
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-primary" id="btnSave"><i class="fas fa-paper-plane me-1"></i>Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            var requestId = '@Model.RequestId';
+            var items = @Json.Serialize(initItems);
+            var U = {
+                centers: '@Url.Action("ServiceCenters", "Service")', categories: '@Url.Action("Categories", "Service")',
+                subject: '@Url.Action("SearchSubject", "Service")', add: '@Url.Action("AddItem", "Service")',
+                upd: '@Url.Action("UpdateItem", "Service")', save: '@Url.Action("SaveRequest", "Service")'
+            };
+            var byId = function (id) { return document.getElementById(id); };
+            var esc = SD.esc;
+            function getJson(url, q) {
+                return fetch(url + '?' + new URLSearchParams(q).toString(), { credentials: 'same-origin' })
+                    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
+            }
+            // selects may be Select2 (app-standard.js): refresh its display after the options / value change
+            function fill(sel, list, first) { sel.innerHTML = first; list.forEach(function (o) { sel.add(new Option(o.name, o.id)); }); $(sel).trigger('change.select2'); }
+            function setVal(sel, v) { sel.value = v; $(sel).trigger('change.select2'); }
+            function showMsg(text, ok) { var m = byId('svMsg'); m.className = 'alert ' + (ok ? 'alert-success' : 'alert-danger'); m.textContent = text; }
+
+            /* ===== location -> service center -> category (old AutoPostBack drop downs) ===== */
+            function loadCategories() {
+                fill(byId('sCategory'), [], '<option value="0">Select</option>');
+                if (byId('sCenter').value === '0') return Promise.resolve();
+                return getJson(U.categories, { serviceCenterId: byId('sCenter').value })
+                    .then(function (l) { fill(byId('sCategory'), l, '<option value="0">Select</option>'); })
+                    .catch(function () { SD.toast('Could not load the categories.', true); });
+            }
+            function loadCenters() {
+                fill(byId('sCenter'), [], '<option value="0">-- Select --</option>');
+                if (byId('bCenter').value === '0') return loadCategories();
+                return getJson(U.centers, { centerId: byId('bCenter').value })
+                    .then(function (l) { fill(byId('sCenter'), l, '<option value="0">-- Select --</option>'); if (l.length) setVal(byId('sCenter'), l[0].id); return loadCategories(); })
+                    .catch(function () { SD.toast('Could not load the service centers.', true); });
+            }
+            $(byId('bCenter')).on('change', loadCenters);
+            $(byId('sCenter')).on('change', loadCategories);
+            loadCenters();
+
+            /* ===== subject auto complete (old SubjectSearch web method) ===== */
+            var timer = null;
+            byId('iSubject').addEventListener('input', function (e) {
+                var v = e.target.value.trim(); clearTimeout(timer);
+                if (v.length < 2) return;
+                timer = setTimeout(function () {
+                    getJson(U.subject, { term: v }).then(function (l) {
+                        byId('dlSubject').innerHTML = l.map(function (s) { return '<option value="' + esc(s) + '"></option>'; }).join('');
+                    }).catch(function () { });
+                }, 250);
+            });
+
+            /* ===== items (old gvServices) ===== */
+            function drawItems() {
+                byId('noItems').style.display = items.length ? 'none' : '';
+                byId('itemRows').innerHTML = items.map(function (it, i) {
+                    var att = it.attachmentUrl ? '<a href="' + esc(it.attachmentUrl) + '" target="_blank" rel="noopener"><i class="fas fa-paperclip me-1"></i>Download</a>' : '-';
+                    return '<tr data-id="' + it.id + '">' +
+                        '<td data-label="SL#">' + (i + 1) + '</td>' +
+                        '<td data-label="Subject">' + esc(it.subject) + '</td>' +
+                        '<td data-label="Quantity"><input class="form-control form-control-sm" data-f="quantity" inputmode="numeric" value="' + esc(it.quantity) + '" /></td>' +
+                        '<td data-label="Remarks"><input class="form-control form-control-sm" data-f="remarks" maxlength="150" value="' + esc(it.remarks) + '" /></td>' +
+                        '<td data-label="Attachment">' + att + '</td>' +
+                        '<td data-label="Action" class="text-center"><button type="button" class="btn btn-sm btn-outline-success" data-act="upd" title="Save changes"><i class="fas fa-check"></i></button></td></tr>';
+                }).join('');
+            }
+            drawItems();
+            function done(res) { if (!res.success) { SD.toast(res.message, true); return; } items = res.items; drawItems(); SD.toast(res.message); }
+
+            byId('itemRows').addEventListener('click', function (e) {
+                var b = e.target.closest('button[data-act="upd"]'); if (!b) return;
+                var tr = b.closest('tr'), v = function (f) { return tr.querySelector('[data-f="' + f + '"]').value; };
+                SD.post(U.upd, { id: tr.dataset.id, quantity: v('quantity'), remarks: v('remarks') }).then(done)
+                  .catch(function () { SD.toast('Server error. Please try again.', true); });
+            });
+
+            byId('btnAddItem').addEventListener('click', function () {
+                var subject = byId('iSubject').value.trim();
+                if (!subject) { SD.toast('Subject Is Required', true); byId('iSubject').focus(); return; }
+                var fd = new FormData();
+                fd.append('requestId', requestId);
+                fd.append('subject', subject);
+                fd.append('quantity', byId('iQty').value);
+                fd.append('remarks', byId('iRemarks').value);
+                if (byId('iFile') && byId('iFile').files[0]) fd.append('file', byId('iFile').files[0]);
+                fd.append('__RequestVerificationToken', document.querySelector('input[name="__RequestVerificationToken"]').value);
+
+                var btn = this, html = btn.innerHTML; SD.lock(btn, 'Adding...');
+                fetch(U.add, { method: 'POST', credentials: 'same-origin', body: fd })
+                    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+                    .then(function (res) {
+                        done(res);
+                        if (res.success) {                                   // old page cleared subject + remarks
+                            byId('iSubject').value = ''; byId('iRemarks').value = '';
+                            if (byId('iFile')) byId('iFile').value = '';
+                            byId('iSubject').focus();
+                        }
+                    })
+                    .catch(function (err) { SD.toast(String(err.message) === '413' ? 'The file is too big.' : 'Server error. Please try again.', true); })
+                    .finally(function () { btn.disabled = false; btn.innerHTML = html; });
+            });
+
+            /* ===== SAVE (old btnSave_Click) ===== */
+            byId('btnSave').addEventListener('click', function () {
+                if (byId('sCenter').value === '0') { showMsg('Select Service Center', false); return; }
+                if (byId('sCategory').value === '0') { showMsg('Select Service Category', false); return; }
+                var btn = this, html = btn.innerHTML; SD.lock(btn, 'Saving...');
+                SD.post(U.save, { requestId: requestId, serviceCenterId: byId('sCenter').value, categoryId: byId('sCategory').value, machineId: byId('sMachine').value })
+                    .then(function (res) {
+                        if (res.success) {
+                            showMsg(res.message, true);
+                            setTimeout(function () { location.href = '@Url.Action("NewService", "Service")'; }, 1500);   // new empty draft
+                        } else { showMsg(res.message, false); btn.disabled = false; btn.innerHTML = html; }
+                    }).catch(function () { showMsg('Save failed. Please try again.', false); btn.disabled = false; btn.innerHTML = html; });
+            });
+        })();
+    </script>
+}

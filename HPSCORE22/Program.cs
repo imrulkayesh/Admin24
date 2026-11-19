@@ -45,6 +45,8 @@ builder.Services.AddScoped<IModuleRepository, ModuleRepository>();
 builder.Services.AddScoped<IMeetingRepository, MeetingRepository>();
 builder.Services.AddScoped<IDispatchRepository, DispatchRepository>();          // Dispatch module (port of YA Pages/Dispatch)
 builder.Services.AddSingleton<DispatchAttachmentStore>();                       // Dispatch item attachments (Dispatch:AttachmentFolder)
+builder.Services.AddScoped<IServiceRepository, ServiceRepository>();            // Service module (port of YA Pages/Service)
+builder.Services.AddSingleton<ServiceAttachmentStore>();                        // Service item attachments (Service:AttachmentFolder)
 
 builder.Services.AddScoped<IModuleDashboardProvider, MeetingDashboardProvider>();
 builder.Services.AddScoped<IModuleDashboardProvider, DispatchDashboardProvider>();

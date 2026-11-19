@@ -1,0 +1,402 @@
+@* Views/Service/InstantService.cshtml  (old YA: Pages/Service/InstantService.aspx)
+   A service person logs a job he did for an employee: the request is assigned to himself (his team) and waits (STATUS 100)
+   for the center admin's approval (Assign Service -> Instant Service Approval).
+   Uses the same open draft as New Service (old CheckRequest). Items: add / change. Accessories: add / delete (as in YA). *@
+@model AlphaCare.Models.InstantServiceViewModel
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = "Instant Service";
+    var initItems = Model.Items.Select(i => new
+    {
+        id = i.ID, subject = i.SUBJECT, quantity = i.QUANTITY, remarks = i.REMARKS,
+        attachment = string.IsNullOrWhiteSpace(i.ATTACHMENT) ? null : i.ATTACHMENT,
+        attachmentUrl = string.IsNullOrWhiteSpace(i.ATTACHMENT) ? null : Url.Action("Attachment", "Service", new { id = i.ID })
+    });
+    var initAcc = Model.Accessories.Select(a => new
+    {
+        id = a.ID, name = a.ACCESSORIESNAME, quantity = a.QUANTITY, price = a.PRICE, currency = a.CURRENCYCODE, newItem = a.NEWITEM
+    });
+    var me = Model.Me;
+    int[] hours = { 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5, 6, 7, 8 };   // old list order
+}
+
+<style>
+    .sv-box { border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; background: #fff; height: 100%; }
+    .sv-box h6 { font-weight: 700; color: #334155; margin-bottom: 12px; }
+    .sv-box h6 i { color: #4f46e5; }
+    .sv-items td, .sv-items th { vertical-align: middle; }
+</style>
+
+<div class="container-fluid py-3" data-smart-page>
+    <div class="card shadow-sm border-0">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-bolt me-2"></i>Instant Service</h5>
+            <a class="btn btn-sm btn-light" href="@Url.Action("MyServiceList", "Service")"><i class="fas fa-screwdriver-wrench me-1"></i>My Service List</a>
+        </div>
+
+        <div class="card-body">
+            @Html.AntiForgeryToken()
+            <div id="svMsg" class="alert d-none"></div>
+
+            @if (Model.Membership == null)
+            {
+                <div class="alert alert-warning"><i class="fas fa-triangle-exclamation me-1"></i>You are not an active member of a service team, so an instant service cannot be saved. Ask the service center to add you on Team Member.</div>
+            }
+
+            <div class="row g-3 mb-3">
+                <!-- ============ EMPLOYEE (old sender block) ============ -->
+                <div class="col-lg-6">
+                    <div class="sv-box">
+                        <h6><i class="fas fa-user-tag me-2"></i>Service For (Employee)</h6>
+                        <div class="row g-2">
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold" for="eStaff">Staff ID <span class="text-danger">*</span></label>
+                                <input type="text" id="eStaff" class="form-control" list="dlEmp" autocomplete="off" placeholder="Type ID or name" value="@me?.STAFFID" />
+                                <datalist id="dlEmp"></datalist>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold" for="eCenter">Location <span class="text-danger">*</span></label>
+                                <select id="eCenter" class="form-select">
+                                    <option value="">-- Select --</option>
+                                    @foreach (var c in Model.BusinessCenters)
+                                    {
+                                        <option value="@c.ID" selected="@(me?.BUSINESSCENTERID == c.ID)">@c.CENTERNAME</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold" for="eDept">Department</label>
+                                <select id="eDept" class="form-select">
+                                    <option value="">-- Select --</option>
+                                    @foreach (var d in Model.Departments)
+                                    {
+                                        <option value="@d.ID" selected="@(me?.DEPARTMENTID == d.ID)">@d.DEPARTMENTNAME</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold" for="eEmp">Select Employee</label>
+                                <select id="eEmp" class="form-select"><option value="">-- Select --</option></select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold" for="eName">Name <span class="text-danger">*</span></label>
+                                <input type="text" id="eName" class="form-control" readonly value="@me?.EMPLOYEENAME" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold" for="eMobile">Sender Mobile</label>
+                                <input type="text" id="eMobile" class="form-control" readonly value="@me?.OFFICEMOBILE" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ============ SERVICE ============ -->
+                <div class="col-lg-6">
+                    <div class="sv-box">
+                        <h6><i class="fas fa-screwdriver-wrench me-2"></i>Service</h6>
+                        <div class="row g-2">
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold" for="sCategory">Service Category <span class="text-danger">*</span></label>
+                                <select id="sCategory" class="form-select">
+                                    @foreach (var c in Model.Categories)
+                                    {
+                                        <option value="@c.ID">@c.NAME</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold" for="sMachine">Outlet / Machine</label>
+                                <select id="sMachine" class="form-select">
+                                    <option value="0">Select</option>
+                                    @foreach (var m in Model.Machines)
+                                    {
+                                        <option value="@m.ID">@m.NAME</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-7 col-md-4">
+                                <label class="form-label fw-semibold" for="sStartDate">Start Date <span class="text-danger">*</span></label>
+                                <input type="date" id="sStartDate" class="form-control" value="@DateTime.Today.ToString("yyyy-MM-dd")" />
+                            </div>
+                            <div class="col-5 col-md-2">
+                                <label class="form-label fw-semibold" for="sStartHour">Time</label>
+                                <select id="sStartHour" class="form-select" data-native>
+                                    @foreach (var h in hours) { <option value="@h">@h.ToString("00"):00</option> }
+                                </select>
+                            </div>
+                            <div class="col-7 col-md-4">
+                                <label class="form-label fw-semibold" for="sEndDate">End Date <span class="text-danger">*</span></label>
+                                <input type="date" id="sEndDate" class="form-control" value="@DateTime.Today.ToString("yyyy-MM-dd")" />
+                            </div>
+                            <div class="col-5 col-md-2">
+                                <label class="form-label fw-semibold" for="sEndHour">Time</label>
+                                <select id="sEndHour" class="form-select" data-native>
+                                    @foreach (var h in hours) { <option value="@h">@h.ToString("00"):00</option> }
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ============ ITEMS ============ -->
+            <div class="sv-box mb-3">
+                <h6><i class="fas fa-list-check me-2"></i>Service Details</h6>
+                <div class="row g-2 align-items-end mb-2">
+                    <div class="col-md-4">
+                        <label class="form-label fw-semibold" for="iSubject">Subject <span class="text-danger">*</span></label>
+                        <input type="text" id="iSubject" class="form-control" list="dlSubject" maxlength="100" autocomplete="off" />
+                        <datalist id="dlSubject"></datalist>
+                    </div>
+                    <div class="col-6 col-md-1">
+                        <label class="form-label fw-semibold" for="iQty">Quantity</label>
+                        <input type="text" id="iQty" class="form-control" inputmode="numeric" value="1" />
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold" for="iRemarks">Remarks</label>
+                        <input type="text" id="iRemarks" class="form-control" maxlength="150" />
+                    </div>
+                    @if (Model.AttachmentsEnabled)
+                    {
+                        <div class="col-md-2">
+                            <label class="form-label fw-semibold" for="iFile">Attachment</label>
+                            <input type="file" id="iFile" class="form-control" />
+                        </div>
+                    }
+                    <div class="col-md-2">
+                        <button type="button" class="btn btn-success w-100" id="btnAddItem"><i class="fas fa-plus me-1"></i>Add Item</button>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm sv-items mb-0">
+                        <thead class="table-light"><tr><th>SL#</th><th>Subject</th><th style="width:110px">Quantity</th><th>Remarks</th><th>Attachment</th><th class="text-center">Action</th></tr></thead>
+                        <tbody id="itemRows"></tbody>
+                    </table>
+                    <div class="text-muted small py-2" id="noItems">No item yet.</div>
+                </div>
+            </div>
+
+            <!-- ============ ACCESSORIES ============ -->
+            <div class="sv-box mb-3">
+                <h6><i class="fas fa-toolbox me-2"></i>Required Accessories</h6>
+                <div class="row g-2 align-items-end mb-2">
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold" for="aCategory">Category</label>
+                        <select id="aCategory" class="form-select">
+                            <option value="0">-- Select --</option>
+                            @foreach (var c in Model.AccessoryCategories)
+                            {
+                                <option value="@c.ID">@c.ACCESSORIESCATEGORY</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold" for="aItem">Accessories</label>
+                        <select id="aItem" class="form-select"><option value="0">-- Select --</option></select>
+                    </div>
+                    <div class="col-4 col-md-1">
+                        <label class="form-label fw-semibold" for="aQty">Quantity</label>
+                        <input type="text" id="aQty" class="form-control" inputmode="numeric" />
+                    </div>
+                    <div class="col-4 col-md-1">
+                        <label class="form-label fw-semibold" for="aPrice">Price</label>
+                        <input type="text" id="aPrice" class="form-control" inputmode="numeric" />
+                    </div>
+                    <div class="col-4 col-md-2">
+                        <label class="form-label fw-semibold" for="aCurrency">Currency</label>
+                        <select id="aCurrency" class="form-select">
+                            @foreach (var c in Model.Currencies)
+                            {
+                                <option value="@c.ID">@c.CURRENCYCODE</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-6 col-md-1">
+                        <div class="form-check mb-2"><input class="form-check-input" type="checkbox" id="aNew" /><label class="form-check-label" for="aNew">Is New</label></div>
+                    </div>
+                    <div class="col-6 col-md-1">
+                        <button type="button" class="btn btn-success w-100" id="btnAddAcc" title="Add Accessories"><i class="fas fa-plus"></i></button>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm sv-items mb-0">
+                        <thead class="table-light"><tr><th>Accessories</th><th>Quantity</th><th>Price</th><th>Currency</th><th>Is New</th><th class="text-center">Action</th></tr></thead>
+                        <tbody id="accRows"></tbody>
+                    </table>
+                    <div class="text-muted small py-2" id="noAcc">No accessory.</div>
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-primary" id="btnSave" disabled="@(Model.Membership == null)"><i class="fas fa-floppy-disk me-1"></i>Save</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            var requestId = '@Model.RequestId';
+            var items = @Json.Serialize(initItems);
+            var acc = @Json.Serialize(initAcc);
+            var U = {
+                subject: '@Url.Action("SearchSubject", "Service")', add: '@Url.Action("AddItem", "Service")', upd: '@Url.Action("UpdateItem", "Service")',
+                searchEmp: '@Url.Action("SearchEmployee", "Service")', emp: '@Url.Action("GetEmployee", "Service")', emps: '@Url.Action("GetEmployees", "Service")',
+                accOptions: '@Url.Action("AccessoryOptions", "Service")', accSave: '@Url.Action("SaveRequiredAccessory", "Service")',
+                accDel: '@Url.Action("DeleteRequiredAccessory", "Service")', save: '@Url.Action("SaveInstantService", "Service")'
+            };
+            var byId = function (id) { return document.getElementById(id); };
+            var esc = SD.esc;
+            function getJson(url, q) {
+                return fetch(url + '?' + new URLSearchParams(q).toString(), { credentials: 'same-origin' })
+                    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
+            }
+            // selects may be Select2 (app-standard.js): refresh its display after the options / value change
+            function setVal(sel, v) { sel.value = v; $(sel).trigger('change.select2'); }
+            function showMsg(text, ok) { var m = byId('svMsg'); m.className = 'alert ' + (ok ? 'alert-success' : 'alert-danger'); m.textContent = text; }
+            function fail() { SD.toast('Server error. Please try again.', true); }
+
+            /* ===== employee (old sender: staff id text box, location -> department -> employee) ===== */
+            var timer = null;
+            byId('eStaff').addEventListener('input', function () {
+                var v = this.value.trim(); clearTimeout(timer);
+                if (v.length < 2) return;
+                timer = setTimeout(function () {
+                    getJson(U.searchEmp, { term: v }).then(function (l) {
+                        byId('dlEmp').innerHTML = l.map(function (s) { return '<option value="' + esc(s) + '"></option>'; }).join('');
+                    }).catch(function () { });
+                }, 250);
+            });
+            function loadEmployees(selectStaff) {
+                var emp = byId('eEmp'); emp.innerHTML = '<option value="">-- Select --</option>';
+                if (!byId('eCenter').value || !byId('eDept').value) { $(emp).trigger('change.select2'); return Promise.resolve(); }
+                return getJson(U.emps, { centerId: byId('eCenter').value, departmentId: byId('eDept').value }).then(function (l) {
+                    l.forEach(function (e) {
+                        var o = new Option(e.name + ' (' + e.staffId + ')', e.staffId, false, e.staffId === selectStaff);
+                        o.dataset.name = e.name || ''; o.dataset.mobile = e.mobile || ''; emp.add(o);
+                    });
+                    $(emp).trigger('change.select2');
+                }).catch(function () { SD.toast('Could not load the employees.', true); });
+            }
+            $(byId('eCenter')).on('change', function () { loadEmployees(null); });
+            $(byId('eDept')).on('change', function () { loadEmployees(null); });
+            $(byId('eEmp')).on('change', function () {          // old LoadSenderDetails
+                var o = this.selectedOptions[0]; if (!o || !o.value) return;
+                byId('eStaff').value = o.value; byId('eName').value = o.dataset.name; byId('eMobile').value = o.dataset.mobile;
+            });
+            byId('eStaff').addEventListener('change', function () {   // old tbxStaffID_TextChanged
+                var v = this.value.trim(); if (!v) return;
+                getJson(U.emp, { staffId: v }).then(function (e) {
+                    if (!e.found) { SD.toast('Employee not found.', true); byId('eStaff').value = ''; return; }
+                    byId('eStaff').value = e.staffId; byId('eName').value = e.name || ''; byId('eMobile').value = e.mobile || '';
+                    setVal(byId('eCenter'), e.centerId || ''); setVal(byId('eDept'), e.departmentId || '');
+                    loadEmployees(e.staffId);
+                }).catch(function () { SD.toast('Could not find the employee.', true); });
+            });
+            loadEmployees(byId('eStaff').value);
+
+            /* ===== subject auto complete ===== */
+            var t2 = null;
+            byId('iSubject').addEventListener('input', function (e) {
+                var v = e.target.value.trim(); clearTimeout(t2);
+                if (v.length < 2) return;
+                t2 = setTimeout(function () {
+                    getJson(U.subject, { term: v }).then(function (l) {
+                        byId('dlSubject').innerHTML = l.map(function (s) { return '<option value="' + esc(s) + '"></option>'; }).join('');
+                    }).catch(function () { });
+                }, 250);
+            });
+
+            /* ===== items ===== */
+            function drawItems() {
+                byId('noItems').style.display = items.length ? 'none' : '';
+                byId('itemRows').innerHTML = items.map(function (it, i) {
+                    var att = it.attachmentUrl ? '<a href="' + esc(it.attachmentUrl) + '" target="_blank" rel="noopener"><i class="fas fa-paperclip me-1"></i>Download</a>' : '-';
+                    return '<tr data-id="' + it.id + '"><td>' + (i + 1) + '</td><td>' + esc(it.subject) + '</td>' +
+                        '<td><input class="form-control form-control-sm" data-f="quantity" inputmode="numeric" value="' + esc(it.quantity) + '" /></td>' +
+                        '<td><input class="form-control form-control-sm" data-f="remarks" maxlength="150" value="' + esc(it.remarks) + '" /></td>' +
+                        '<td>' + att + '</td>' +
+                        '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-success" data-act="upd" title="Save changes"><i class="fas fa-check"></i></button></td></tr>';
+                }).join('');
+            }
+            drawItems();
+            function doneItems(res) { if (!res.success) { SD.toast(res.message, true); return; } items = res.items; drawItems(); SD.toast(res.message); }
+            byId('itemRows').addEventListener('click', function (e) {
+                var b = e.target.closest('button[data-act="upd"]'); if (!b) return;
+                var tr = b.closest('tr'), v = function (f) { return tr.querySelector('[data-f="' + f + '"]').value; };
+                SD.post(U.upd, { id: tr.dataset.id, quantity: v('quantity'), remarks: v('remarks') }).then(doneItems).catch(fail);
+            });
+            byId('btnAddItem').addEventListener('click', function () {
+                var subject = byId('iSubject').value.trim();
+                if (!subject) { SD.toast('Subject Is Required', true); byId('iSubject').focus(); return; }
+                var fd = new FormData();
+                fd.append('requestId', requestId); fd.append('subject', subject);
+                fd.append('quantity', byId('iQty').value); fd.append('remarks', byId('iRemarks').value);
+                if (byId('iFile') && byId('iFile').files[0]) fd.append('file', byId('iFile').files[0]);
+                fd.append('__RequestVerificationToken', document.querySelector('input[name="__RequestVerificationToken"]').value);
+                var btn = this, html = btn.innerHTML; SD.lock(btn, 'Adding...');
+                fetch(U.add, { method: 'POST', credentials: 'same-origin', body: fd })
+                    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+                    .then(function (res) {
+                        doneItems(res);
+                        if (res.success) { byId('iSubject').value = ''; byId('iRemarks').value = ''; if (byId('iFile')) byId('iFile').value = ''; }
+                    })
+                    .catch(function (err) { SD.toast(String(err.message) === '413' ? 'The file is too big.' : 'Server error. Please try again.', true); })
+                    .finally(function () { btn.disabled = false; btn.innerHTML = html; });
+            });
+
+            /* ===== accessories (old btnAddAccessories / btnDeleteAccessories) ===== */
+            function drawAcc() {
+                byId('noAcc').style.display = acc.length ? 'none' : '';
+                byId('accRows').innerHTML = acc.map(function (a) {
+                    return '<tr data-id="' + a.id + '"><td>' + esc(a.name) + '</td><td>' + esc(a.quantity) + '</td><td>' + esc(a.price) + '</td><td>' +
+                        esc(a.currency || '') + '</td><td>' + esc(a.newItem) + '</td><td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" data-act="del" title="Delete"><i class="fas fa-trash"></i></button></td></tr>';
+                }).join('');
+            }
+            drawAcc();
+            $(byId('aCategory')).on('change', function () {
+                var sel = byId('aItem'); sel.innerHTML = '<option value="0">-- Select --</option>';
+                if (this.value === '0') { $(sel).trigger('change.select2'); return; }
+                getJson(U.accOptions, { categoryId: this.value }).then(function (l) {
+                    l.forEach(function (o) { sel.add(new Option(o.name, o.id)); }); $(sel).trigger('change.select2');
+                    if (!l.length) SD.toast('No accessory of this category in the service centers you supervise.', true);
+                }).catch(function () { SD.toast('Could not load the accessories.', true); });
+            });
+            byId('btnAddAcc').addEventListener('click', function () {
+                SD.post(U.accSave, {
+                    id: 0, requestId: requestId, categoryId: byId('aCategory').value, accessoryId: byId('aItem').value,
+                    quantity: byId('aQty').value, price: byId('aPrice').value, currencyId: byId('aCurrency').value, isNew: byId('aNew').checked
+                }).then(function (res) {
+                    if (!res.success) { SD.toast(res.message, true); return; }
+                    acc = res.accessories; drawAcc(); SD.toast(res.message); byId('aQty').value = ''; byId('aPrice').value = '';
+                }).catch(fail);
+            });
+            byId('accRows').addEventListener('click', function (e) {
+                var b = e.target.closest('button[data-act="del"]'); if (!b) return;
+                var tr = b.closest('tr');
+                SD.confirm({ title: 'Delete this accessory?', text: tr.children[0].textContent, tone: 'danger', icon: 'fa-trash', yesText: 'Delete',
+                    run: function () { return SD.post(U.accDel, { id: tr.dataset.id }); } })
+                  .then(function (res) { if (res && res.success) { acc = res.accessories; drawAcc(); SD.toast(res.message); } });
+            });
+
+            /* ===== SAVE (old btnSave_Click) ===== */
+            byId('btnSave').addEventListener('click', function () {
+                var staff = byId('eEmp').value || byId('eStaff').value.trim();
+                if (!staff || !byId('eName').value.trim()) { showMsg('Enter Name', false); return; }
+                if (!byId('sCategory').value) { showMsg('Select Service Category', false); return; }
+                if (!byId('sStartDate').value) { showMsg('Enter Start Date', false); return; }
+                if (!byId('sEndDate').value) { showMsg('Enter End Date', false); return; }
+                var btn = this, html = btn.innerHTML; SD.lock(btn, 'Saving...');
+                SD.post(U.save, {
+                    requestId: requestId, senderStaffId: staff, categoryId: byId('sCategory').value, machineId: byId('sMachine').value,
+                    startDate: byId('sStartDate').value, startHour: byId('sStartHour').value, endDate: byId('sEndDate').value, endHour: byId('sEndHour').value
+                }).then(function (res) {
+                    if (res.success) { showMsg(res.message, true); setTimeout(function () { location.href = '@Url.Action("InstantService", "Service")'; }, 1500); }
+                    else { showMsg(res.message, false); btn.disabled = false; btn.innerHTML = html; }
+                }).catch(function () { showMsg('Save failed. Please try again.', false); btn.disabled = false; btn.innerHTML = html; });
+            });
+        })();
+    </script>
+}

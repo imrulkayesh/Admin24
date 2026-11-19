@@ -1046,7 +1046,7 @@ namespace Admin360.Repositories
                  INNER JOIN BS_DEPARTMENT DE ON DE.ID = E.DEPARTMENTID
                  INNER JOIN DP_ISSUETYPE IT ON IT.ID = D.ISSUETYPEID
                  WHERE D.ISOPEN = 0 AND D.COMPLETED = 0 AND IT.ISPERSONAL = 0
-                   AND (D.FROMUSER = :S1 OR D.TOUSER = :S2)
+                   AND (D.FROMUSER = :S1 OR D.TOUSER = :S2) AND D.CREATEDATE >= SYSDATE - 30
                  ORDER BY D.CREATEDATE DESC";
             return conn.Query<TrackingListItemModel>(sql, new { S1 = staffId, S2 = staffId }).ToList();
         }

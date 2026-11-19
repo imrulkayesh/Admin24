@@ -1,0 +1,91 @@
+@* Views/Service/ServiceSummary.cshtml  (old YA: Reports/Service/Default.aspx)
+   One doughnut per service center from VW_SERVICECENTER - same numbers, slices and colours as YA's Google pie charts:
+   Solved (COMPLETED) #009900, Pending #ff6600, Assigned (PROCESSING) blue, Forwarded red, Instant #003300.
+   Title of each card = CENTERCODE-SERVICECENTERNAME-SERVICECOUNT (as YA). Charts: Chart.js from the layout. *@
+@model AlphaCare.Models.ServiceSummaryViewModel
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    var charts = Model.Rows.Select((r, i) => new
+    {
+        id = i + 1,
+        data = new long[] { r.COMPLETED ?? 0, r.PENDING ?? 0, r.PROCESSING ?? 0, r.FORWARDED ?? 0, r.INSTANTSERVICE ?? 0 }
+    });
+}
+
+<style>
+    .ss-card { border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; height: 100%; }
+    .ss-card .ss-h { padding: 10px 14px; border-bottom: 1px solid #f1f5f9; font-weight: 700; color: #334155; display: flex; justify-content: space-between; gap: 8px; }
+    .ss-card .ss-b { padding: 10px; height: 280px; position: relative; }
+    .ss-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #94a3b8; }
+</style>
+
+<div class="sd-page" data-smart-page>
+    <div class="card shadow-sm border-0">
+        <div class="sd-head">
+            <h5 class="mb-0"><i class="fas fa-chart-pie me-2"></i>Service Summary - @DateTime.Now.ToString("MMMM yyyy")</h5>
+            <span class="sd-date">
+                <a class="text-decoration-none me-3" href="@Url.Action("ReportServiceCenter", "Service")"><i class="fas fa-table me-1"></i>Table view</a>
+                <i class="far fa-calendar me-1"></i>@DateTime.Today.ToString("dddd, dd MMMM yyyy")
+            </span>
+        </div>
+        <div class="card-body">
+            @if (!string.IsNullOrEmpty(Model.Message))
+            {
+                <div class="alert alert-warning py-2"><i class="fas fa-circle-exclamation me-1"></i>@Model.Message</div>
+            }
+            else if (Model.Rows.Count == 0)
+            {
+                <div class="sd-empty"><i class="far fa-folder-open"></i> No service center data.</div>
+            }
+            <div class="row g-3">
+                @for (int i = 0; i < Model.Rows.Count; i++)
+                {
+                    var r = Model.Rows[i];
+                    long sum = (r.COMPLETED ?? 0) + (r.PENDING ?? 0) + (r.PROCESSING ?? 0) + (r.FORWARDED ?? 0) + (r.INSTANTSERVICE ?? 0);
+                    <div class="col-md-6 col-xl-4">
+                        <div class="ss-card">
+                            <div class="ss-h">
+                                <span>@r.CENTERCODE-@r.SERVICECENTERNAME-@(r.SERVICECOUNT ?? 0)</span>
+                            </div>
+                            <div class="ss-b">
+                                @if (sum == 0)
+                                {
+                                    <div class="ss-empty">No request</div>
+                                }
+                                else
+                                {
+                                    <canvas id="Chart@(i + 1)"></canvas>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+            <div class="small text-muted mt-3"><i class="fas fa-circle-info me-1"></i>Numbers from the database view VW_SERVICECENTER (same as YA's Service Summary).</div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            if (typeof Chart === 'undefined') return;
+            var labels = ['Solved', 'Pending', 'Assigned', 'Forwarded', 'Instant'];
+            var colors = ['#009900', '#ff6600', '#0000ff', '#ff0000', '#003300'];     // old slices colours
+            var charts = @Json.Serialize(charts);
+            charts.forEach(function (c) {
+                var el = document.getElementById('Chart' + c.id);
+                if (!el) return;
+                new Chart(el, {
+                    type: 'doughnut',
+                    data: { labels: labels, datasets: [{ data: c.data, backgroundColor: colors, borderWidth: 2 }] },
+                    options: {
+                        responsive: true, maintainAspectRatio: false, cutout: '40%',            // old pieHole: 0.4
+                        plugins: { legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 8 } } }
+                    }
+                });
+            });
+        })();
+    </script>
+}

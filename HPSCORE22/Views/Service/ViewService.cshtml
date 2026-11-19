@@ -1,0 +1,459 @@
+@* Views/Service/ViewService.cshtml
+   One detail page for the old View.aspx, ServiceRemarks.aspx, SEComplete.aspx, Ratings.aspx, Details.aspx and InstantServiceDetails.aspx.
+   Header / requester / approver / items / accessories / remarks as in YA. The action boxes are shown only when the request is
+   in the user's list of the old page that offered them (ServiceDetailsViewModel.Can...):
+     approver           -> Approve / Reject                         (old Approver + ServiceRemarks)
+     center admin       -> Approve instant service                   (old InstantServiceDetails)
+     service person     -> Done with machine stop / start time       (old SEComplete)      #complete
+     requester (st. 2)  -> Accept / Reject = revise / rate service   (old MyServiceRequest + ServiceRemarks + Ratings)  #revise #rate
+     service person (3) -> rate the user                             (old Ratings)         #rate
+     service side       -> Done (next status)                        (old ServiceRemarks)
+     team supervisor    -> required accessories add / edit           (old Details)         #accessories
+     everybody here     -> Update Remarks *@
+@model AlphaCare.Models.ServiceDetailsViewModel
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    var d = Model.Request;
+    var a = Model.Assign;
+    ViewData["Title"] = "Service " + d.SERVICEID;
+    Func<string?, string> dash = v => string.IsNullOrWhiteSpace(v) || v.Trim() == "-" ? "-" : v.Trim();
+    Func<int, string> stars = n => n <= 0 ? "-" : new string('★', Math.Min(n, 5)) + new string('☆', 5 - Math.Min(n, 5));
+    bool rateUser = Model.CanAccept;                // requester rates the service
+    bool rateServiceman = Model.CanRateServiceman;  // service person rates the user
+    bool anyDecision = Model.CanApprove || Model.CanRejectApproval || Model.CanApproveInstant || Model.CanAccept || Model.CanDone;
+    var initAcc = Model.Accessories.Select(x => new
+    {
+        id = x.ID, categoryId = x.CATEGORYID, accessoryId = x.ACCESSORIESID, name = x.ACCESSORIESNAME, quantity = x.QUANTITY,
+        price = x.PRICE, currencyId = x.CURRENCYID, currency = x.CURRENCYCODE, isNew = x.ISNEW, newItem = x.NEWITEM
+    });
+}
+
+<style>
+    .dv-box { border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; height: 100%; background: #fff; }
+    .dv-box h6 { font-weight: 700; color: #334155; margin-bottom: 10px; }
+    .dv-box h6 i { color: #4f46e5; }
+    .dv-row { display: flex; gap: 8px; padding: 3px 0; }
+    .dv-row b { min-width: 120px; color: #475569; font-weight: 600; }
+    .dv-act { border-color: #c7d2fe; background: #f8faff; }
+    .dv-flash { box-shadow: 0 0 0 3px #a5b4fc; transition: box-shadow .6s; }
+    .dv-stars button { border: 0; background: none; font-size: 28px; color: #cbd5e1; padding: 0 2px; line-height: 1; }
+    .dv-stars button.on { color: #f59e0b; }
+</style>
+
+<div class="container-fluid py-3" data-smart-page>
+    <div class="card shadow-sm border-0">
+        <div class="card-header bg-primary text-white d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <h5 class="mb-0"><i class="fas fa-file-lines me-2"></i>Service <span class="fw-bold">@d.SERVICEID</span></h5>
+            <button type="button" class="btn btn-sm btn-light" onclick="history.length > 1 ? history.back() : location.href='@Url.Action("MyServiceRequest", "Service")'">
+                <i class="fas fa-arrow-left me-1"></i>Back
+            </button>
+        </div>
+
+        <div class="card-body">
+            @Html.AntiForgeryToken()
+
+            <div class="row g-3 mb-3">
+                <div class="col-lg-4">
+                    <div class="dv-box">
+                        <h6><i class="fas fa-circle-info me-2"></i>Request</h6>
+                        <div class="dv-row"><b>Service ID</b><span>@dash(d.SERVICEID)</span></div>
+                        <div class="dv-row"><b>Date</b><span>@(d.CREATEDATE?.ToString("dd/MM/yyyy hh:mm tt") ?? "-")</span></div>
+                        <div class="dv-row"><b>Status</b><span class="fw-semibold">@(d.INSTANTSERVICE == 1 && d.ISAPPROVED == 0 ? "Instant - Waiting for Approval" : d.StatusText)</span></div>
+                        <div class="dv-row"><b>No. of Revision</b><span>@d.NOOFREVISION</span></div>
+                        <div class="dv-row"><b>Category</b><span>@dash(d.CATEGORYNAME)</span></div>
+                        <div class="dv-row"><b>Machine/Outlet</b><span>@dash(d.MACHINE_OUTLET)</span></div>
+                        @if (d.INSTANTSERVICE == 1)
+                        {
+                            <div class="dv-row"><b>Type</b><span><span class="badge bg-info text-dark">Instant Service</span></span></div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(d.FRDSERVICECENTERNAME))
+                        {
+                            <div class="dv-row"><b>Forwarded to</b><span>@d.FRDSERVICECENTERNAME @(d.FRDATE?.ToString("dd/MM/yyyy") ?? "")</span></div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(d.TRANSACTIONID))
+                        {
+                            <div class="dv-row"><b>Dispatch</b><span><a href="@Url.Action("ViewDispatch", "Dispatch", new { id = d.DISPATCHID })">@d.TRANSACTIONID</a></span></div>
+                        }
+                    </div>
+                </div>
+                <div class="col-lg-4">
+                    <div class="dv-box">
+                        <h6><i class="fas fa-user-tag me-2"></i>Requested By</h6>
+                        <div class="dv-row"><b>Name</b><span>@d.EMPLOYEENAME</span></div>
+                        <div class="dv-row"><b>Mobile</b><span>@dash(d.OFFICEMOBILE)</span></div>
+                        <div class="dv-row"><b>Location</b><span>@dash(d.CENTERCODE)</span></div>
+                        <div class="dv-row"><b>Department</b><span>@dash(d.DEPARTMENTCODE)</span></div>
+                        <div class="dv-row"><b>Designation</b><span>@dash(d.DESIGNATIONNAME)</span></div>
+                    </div>
+                </div>
+                <div class="col-lg-4">
+                    <div class="dv-box">
+                        <h6><i class="fas fa-building me-2"></i>Service Center</h6>
+                        <div class="dv-row"><b>Service Center</b><span>@d.SERVICECENTERNAME</span></div>
+                        <div class="dv-row"><b>Location</b><span>@dash(d.SERVICECENTERLOCATION)</span></div>
+                        <div class="dv-row"><b>Center Admin</b><span>@dash(d.CENTERADMIN)</span></div>
+                        <div class="dv-row"><b>Admin Mobile</b><span>@dash(d.ADMINMOBILE)</span></div>
+                    </div>
+                </div>
+                @if (Model.Approver != null)
+                {
+                    <div class="col-lg-4">
+                        <div class="dv-box">
+                            <h6><i class="fas fa-user-check me-2"></i>@(d.ISAPPROVED == 2 ? "Rejected By" : "Approved By")</h6>
+                            <div class="dv-row"><b>Name</b><span>@Model.Approver.EMPLOYEENAME</span></div>
+                            <div class="dv-row"><b>Mobile</b><span>@dash(Model.Approver.OFFICEMOBILE)</span></div>
+                            <div class="dv-row"><b>Location</b><span>@dash(Model.Approver.CENTERCODE)</span></div>
+                            <div class="dv-row"><b>Department</b><span>@dash(Model.Approver.DEPARTMENTCODE)</span></div>
+                            <div class="dv-row"><b>Designation</b><span>@dash(Model.Approver.DESIGNATIONNAME)</span></div>
+                            <div class="dv-row"><b>Date</b><span>@(Model.Approver.APPROVEDATE?.ToString("dd/MM/yyyy") ?? "-")</span></div>
+                        </div>
+                    </div>
+                }
+                @if (a != null)
+                {
+                    <div class="col-lg-4">
+                        <div class="dv-box">
+                            <h6><i class="fas fa-user-gear me-2"></i>Service Person</h6>
+                            <div class="dv-row"><b>Name</b><span>@dash(a.EMPLOYEENAME)</span></div>
+                            <div class="dv-row"><b>Team</b><span>@dash(a.TEAMNAME)</span></div>
+                            <div class="dv-row"><b>Mobile</b><span>@dash(a.OFFICEMOBILE)</span></div>
+                            <div class="dv-row"><b>Start</b><span>@(a.STARTDATE?.ToString("dd/MM/yyyy") ?? "-") @(string.IsNullOrWhiteSpace(a.STARTTIME) ? "" : a.STARTTIME.PadLeft(2, '0') + ":00")</span></div>
+                            <div class="dv-row"><b>End</b><span>@(a.ENDDATE?.ToString("dd/MM/yyyy") ?? "-") @(string.IsNullOrWhiteSpace(a.ENDTIME) ? "" : a.ENDTIME.PadLeft(2, '0') + ":00")</span></div>
+                            @if (d.STATUS > 1)
+                            {
+                                <div class="dv-row"><b>Service Rating</b><span class="text-warning">@stars(a.RATINGFROMUSER)</span></div>
+                                <div class="dv-row"><b>User Rating</b><span class="text-warning">@stars(a.RATINGFROMSERVICEMAN)</span></div>
+                            }
+                        </div>
+                    </div>
+                }
+                @if (d.BTIMEFROM.HasValue || d.BTIMETO.HasValue)
+                {
+                    <div class="col-lg-4">
+                        <div class="dv-box">
+                            <h6><i class="fas fa-clock me-2"></i>Machine Breakdown</h6>
+                            <div class="dv-row"><b>Stop Time</b><span>@(d.BTIMEFROM?.ToString("dd/MM/yyyy hh:mm tt") ?? "-")</span></div>
+                            <div class="dv-row"><b>Start Time</b><span>@(d.BTIMETO?.ToString("dd/MM/yyyy hh:mm tt") ?? "-")</span></div>
+                            <div class="dv-row"><b>Released</b><span>@(d.RELEASEDATE?.ToString("dd/MM/yyyy hh:mm tt") ?? "-")</span></div>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <!-- service details (old rptServiceDetails) -->
+            <div class="dv-box mb-3">
+                <h6><i class="fas fa-list-check me-2"></i>Service Details</h6>
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                        <thead class="table-light"><tr><th>SL#</th><th>Subject</th><th>Quantity</th><th>Remarks</th><th>Attachment</th></tr></thead>
+                        <tbody>
+                            @{ int sl = 0; }
+                            @foreach (var i in Model.Items)
+                            {
+                                <tr>
+                                    <td>@(++sl)</td>
+                                    <td>@i.SUBJECT</td>
+                                    <td>@i.QUANTITY</td>
+                                    <td>@dash(i.REMARKS)</td>
+                                    <td>
+                                        @if (!string.IsNullOrWhiteSpace(i.ATTACHMENT))
+                                        {
+                                            <a href="@Url.Action("Attachment", "Service", new { id = i.ID })" target="_blank" rel="noopener"><i class="fas fa-paperclip me-1"></i>Download</a>
+                                        }
+                                        else
+                                        {
+                                            <span>-</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                            @if (Model.Items.Count == 0)
+                            {
+                                <tr><td colspan="5" class="text-muted">No item.</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- required accessories (old rptAccessories + Details.aspx form) -->
+            <div class="dv-box mb-3 @(Model.CanEditAccessories ? "dv-act" : "")" id="accessories">
+                <h6><i class="fas fa-toolbox me-2"></i>Required Accessories</h6>
+                @if (Model.CanEditAccessories)
+                {
+                    <div class="row g-2 align-items-end mb-2">
+                        <input type="hidden" id="xId" value="0" />
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold" for="xCategory">Category <span class="text-danger">*</span></label>
+                            <select id="xCategory" class="form-select">
+                                <option value="0">-- Select --</option>
+                                @foreach (var c in Model.AccessoryCategories)
+                                {
+                                    <option value="@c.ID">@c.ACCESSORIESCATEGORY</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold" for="xItem">Accessories <span class="text-danger">*</span></label>
+                            <select id="xItem" class="form-select"><option value="0">-- Select --</option></select>
+                        </div>
+                        <div class="col-4 col-md-1">
+                            <label class="form-label fw-semibold" for="xQty">Quantity <span class="text-danger">*</span></label>
+                            <input type="text" id="xQty" class="form-control" inputmode="numeric" />
+                        </div>
+                        <div class="col-4 col-md-1">
+                            <label class="form-label fw-semibold" for="xPrice">Price <span class="text-danger">*</span></label>
+                            <input type="text" id="xPrice" class="form-control" inputmode="numeric" />
+                        </div>
+                        <div class="col-4 col-md-2">
+                            <label class="form-label fw-semibold" for="xCurrency">Currency</label>
+                            <select id="xCurrency" class="form-select">
+                                @foreach (var c in Model.Currencies)
+                                {
+                                    <option value="@c.ID">@c.CURRENCYCODE</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-6 col-md-1">
+                            <div class="form-check mb-2"><input class="form-check-input" type="checkbox" id="xNew" /><label class="form-check-label" for="xNew">Is New</label></div>
+                        </div>
+                        <div class="col-6 col-md-1 d-flex gap-1">
+                            <button type="button" class="btn btn-primary" id="xSave" title="Save"><i class="fas fa-floppy-disk"></i> <span id="xSaveText">Save</span></button>
+                        </div>
+                    </div>
+                }
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                        <thead class="table-light"><tr><th>Accessories</th><th>Quantity</th><th>Price</th><th>Currency</th><th>Is New</th>@if (Model.CanEditAccessories){<th class="text-center">Action</th>}</tr></thead>
+                        <tbody id="accRows"></tbody>
+                    </table>
+                    <div class="text-muted small py-2" id="noAcc">No accessory.</div>
+                </div>
+            </div>
+
+            <!-- remarks (old rptRemarks) -->
+            <div class="dv-box mb-3">
+                <h6><i class="fas fa-comments me-2"></i>Remarks</h6>
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0">
+                        <thead class="table-light"><tr><th>Date</th><th>Name</th><th>Location</th><th>Department</th><th>Mobile</th><th>Remarks</th></tr></thead>
+                        <tbody>
+                            @foreach (var r in Model.Remarks)
+                            {
+                                <tr>
+                                    <td class="text-nowrap">@(r.CREATEDATE?.ToString("dd/MM/yyyy hh:mm tt") ?? "-")</td>
+                                    <td>@r.EMPLOYEENAME</td>
+                                    <td>@dash(r.CENTERCODE)</td>
+                                    <td>@dash(r.DEPARTMENTCODE)</td>
+                                    <td>@dash(r.OFFICEMOBILE)</td>
+                                    <td>@r.REMARKS</td>
+                                </tr>
+                            }
+                            @if (Model.Remarks.Count == 0)
+                            {
+                                <tr><td colspan="6" class="text-muted">No remarks.</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            @if (Model.CanComplete)
+            {
+                <!-- old SEComplete.aspx -->
+                <div class="dv-box dv-act mb-3" id="complete">
+                    <h6><i class="fas fa-circle-check me-2"></i>Complete Service</h6>
+                    <div class="row g-2">
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold" for="cStop">Machine Stop Time</label>
+                            <input type="datetime-local" id="cStop" class="form-control" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-semibold" for="cStart">Machine Start Time</label>
+                            <input type="datetime-local" id="cStart" class="form-control" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold" for="cRemarks">Remarks</label>
+                            <input type="text" id="cRemarks" class="form-control" maxlength="150" />
+                        </div>
+                    </div>
+                    <div class="mt-2"><button type="button" class="btn btn-success" id="cDone"><i class="fas fa-check me-1"></i>Done</button></div>
+                </div>
+            }
+
+            @if (rateUser || rateServiceman)
+            {
+                <!-- old Ratings.aspx -->
+                <div class="dv-box dv-act mb-3" id="rate">
+                    <h6><i class="fas fa-star me-2"></i>@(rateUser ? "Service Rating (your feedback on the service)" : "User Rating (your feedback on the requester)")</h6>
+                    <div class="dv-stars" id="stars">
+                        @for (int s = 1; s <= 5; s++)
+                        {
+                            <button type="button" data-v="@s" title="@s"><i class="fas fa-star"></i></button>
+                        }
+                    </div>
+                    <div class="small text-muted mt-1">@(rateUser ? "Rating the service accepts it (Waiting for Service Person Feedback)." : "Rating the user completes the service.")</div>
+                </div>
+            }
+
+            @if (anyDecision || Model.CanRemark)
+            {
+                <!-- old ServiceRemarks / InstantServiceDetails / Approver buttons + "Update Remarks" -->
+                <div class="dv-box @(anyDecision ? "dv-act" : "") mb-3" id="revise">
+                    <h6><i class="fas fa-pen-to-square me-2"></i>@(anyDecision ? "Action" : "Remarks")</h6>
+                    <label class="form-label fw-semibold" for="dRemarks">Remarks</label>
+                    <textarea id="dRemarks" class="form-control mb-2" rows="2" maxlength="150" placeholder="Remarks (a reason is required to reject)"></textarea>
+                    <div class="d-flex flex-wrap gap-2">
+                        @if (Model.CanApprove)
+                        {
+                            <button type="button" class="btn btn-success" data-act="approve"><i class="fas fa-check me-1"></i>Approve</button>
+                        }
+                        @if (Model.CanRejectApproval)
+                        {
+                            <button type="button" class="btn btn-danger" data-act="reject"><i class="fas fa-xmark me-1"></i>Reject</button>
+                        }
+                        @if (Model.CanApproveInstant)
+                        {
+                            <button type="button" class="btn btn-success" data-act="instant"><i class="fas fa-check me-1"></i>Approve</button>
+                        }
+                        @if (Model.CanAccept)
+                        {
+                            <button type="button" class="btn btn-success" data-act="accept"><i class="fas fa-thumbs-up me-1"></i>Accept</button>
+                            <button type="button" class="btn btn-danger" data-act="revise"><i class="fas fa-thumbs-down me-1"></i>Reject</button>
+                        }
+                        @if (Model.CanDone)
+                        {
+                            <button type="button" class="btn btn-primary" data-act="done"><i class="fas fa-forward-step me-1"></i>Done</button>
+                        }
+                        @if (Model.CanRemark)
+                        {
+                            <button type="button" class="btn btn-outline-primary" data-act="remarks"><i class="fas fa-comment me-1"></i>Update Remarks</button>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            var id = '@d.ID', title = '@d.SERVICEID';
+            var acc = @Json.Serialize(initAcc);
+            var canEditAcc = @(Model.CanEditAccessories ? "true" : "false");
+            var U = {
+                approve: '@Url.Action("Approve", "Service")', reject: '@Url.Action("Reject", "Service")', instant: '@Url.Action("ApproveInstant", "Service")',
+                accept: '@Url.Action("Accept", "Service")', revise: '@Url.Action("Revise", "Service")', done: '@Url.Action("Done", "Service")',
+                remarks: '@Url.Action("SaveRemarks", "Service")', complete: '@Url.Action("Complete", "Service")', rate: '@Url.Action("Rate", "Service")',
+                accOptions: '@Url.Action("AccessoryOptions", "Service")', accSave: '@Url.Action("SaveRequiredAccessory", "Service")'
+            };
+            var byId = function (x) { return document.getElementById(x); };
+            var esc = SD.esc;
+            function reloadSoon(res) { if (res && res.success) { SD.toast(res.message); setTimeout(function () { location.reload(); }, 900); } }
+            function after(res) { if (!res.success) SD.toast(res.message, true); else reloadSoon(res); }
+            function fail() { SD.toast('Server error. Please try again.', true); }
+
+            /* ----- open from a list button: #complete / #rate / #revise / #accessories ----- */
+            if (location.hash) {
+                var box = document.getElementById(location.hash.substring(1));
+                if (box) { box.scrollIntoView({ behavior: 'smooth', block: 'center' }); box.classList.add('dv-flash'); setTimeout(function () { box.classList.remove('dv-flash'); }, 1500); }
+            }
+
+            /* ----- action buttons ----- */
+            var C = {
+                approve: { title: 'Approve this request?', tone: 'success', icon: 'fa-check', yesText: 'Approve' },
+                reject: { title: 'Reject this request?', tone: 'danger', icon: 'fa-xmark', yesText: 'Reject' },
+                instant: { title: 'Approve this instant service?', tone: 'success', icon: 'fa-check', yesText: 'Approve' },
+                accept: { title: 'Accept this service?', tone: 'success', icon: 'fa-thumbs-up', yesText: 'Accept' },
+                revise: { title: 'Reject the service and send it back for revision?', tone: 'danger', icon: 'fa-thumbs-down', yesText: 'Reject', needText: 'Enter Reason of Rejection' },
+                done: { title: 'Move this request to the next status?', tone: 'success', icon: 'fa-forward-step', yesText: 'Done' },
+                remarks: { needText: 'Enter the Remarks.' }
+            };
+            document.querySelectorAll('#revise button[data-act]').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    var act = b.dataset.act, o = C[act], text = byId('dRemarks').value.trim();
+                    if (o.needText && !text) { SD.toast(o.needText, true); byId('dRemarks').focus(); return; }
+                    if (act === 'remarks') {
+                        var html = b.innerHTML; SD.lock(b, 'Saving...');
+                        SD.post(U.remarks, { id: id, remarks: text }).then(after).catch(fail).finally(function () { b.disabled = false; b.innerHTML = html; });
+                        return;
+                    }
+                    SD.confirm({
+                        title: o.title, text: title, tone: o.tone, icon: o.icon, yesText: o.yesText,
+                        run: function () { return SD.post(U[act], { id: id, remarks: text }); }
+                    }).then(reloadSoon);
+                });
+            });
+
+            /* ----- complete (old SEComplete "Done") ----- */
+            if (byId('cDone')) byId('cDone').addEventListener('click', function () {
+                SD.confirm({
+                    title: 'Service done?', text: title, tone: 'success', icon: 'fa-check', yesText: 'Done',
+                    run: function () { return SD.post(U.complete, { id: id, stopTime: byId('cStop').value, startTime: byId('cStart').value, remarks: byId('cRemarks').value.trim() }); }
+                }).then(reloadSoon);
+            });
+
+            /* ----- rating (old ajaxToolkit:Rating, 5 stars) ----- */
+            var starBox = byId('stars');
+            if (starBox) {
+                var btns = Array.prototype.slice.call(starBox.querySelectorAll('button'));
+                function paint(n) { btns.forEach(function (x) { x.classList.toggle('on', +x.dataset.v <= n); }); }
+                btns.forEach(function (x) {
+                    x.addEventListener('mouseenter', function () { paint(+x.dataset.v); });
+                    x.addEventListener('mouseleave', function () { paint(0); });
+                    x.addEventListener('click', function () {
+                        var v = +x.dataset.v;
+                        SD.confirm({
+                            title: 'Give ' + v + ' star' + (v > 1 ? 's' : '') + '?', text: title, tone: 'success', icon: 'fa-star', yesText: 'Save rating',
+                            run: function () { return SD.post(U.rate, { id: id, rating: v }); }
+                        }).then(reloadSoon);
+                    });
+                });
+            }
+
+            /* ----- required accessories (old Details.aspx) ----- */
+            function drawAcc() {
+                byId('noAcc').style.display = acc.length ? 'none' : '';
+                byId('accRows').innerHTML = acc.map(function (x) {
+                    return '<tr data-id="' + x.id + '"><td>' + esc(x.name) + '</td><td>' + esc(x.quantity) + '</td><td>' + esc(x.price) + '</td><td>' + esc(x.currency || '') +
+                        '</td><td>' + esc(x.newItem) + '</td>' + (canEditAcc ? '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-primary" data-act="edit" title="Edit"><i class="fas fa-pen"></i></button></td>' : '') + '</tr>';
+                }).join('');
+            }
+            drawAcc();
+            if (canEditAcc) {
+                function loadItems(categoryId, selectId) {
+                    var sel = byId('xItem'); sel.innerHTML = '<option value="0">-- Select --</option>';
+                    if (!categoryId || categoryId === '0') { $(sel).trigger('change.select2'); return Promise.resolve(); }
+                    return fetch(U.accOptions + '?categoryId=' + encodeURIComponent(categoryId), { credentials: 'same-origin' })
+                        .then(function (r) { return r.json(); })
+                        .then(function (l) { l.forEach(function (o) { sel.add(new Option(o.name, o.id)); }); if (selectId) sel.value = selectId; $(sel).trigger('change.select2'); })
+                        .catch(function () { SD.toast('Could not load the accessories.', true); });
+                }
+                function resetAcc() { byId('xId').value = '0'; byId('xQty').value = ''; byId('xPrice').value = ''; byId('xNew').checked = false; byId('xSaveText').textContent = 'Save'; }
+                $(byId('xCategory')).on('change', function () { loadItems(this.value, null); });
+                byId('accRows').addEventListener('click', function (e) {
+                    var b = e.target.closest('button[data-act="edit"]'); if (!b) return;
+                    var row = acc.filter(function (x) { return String(x.id) === b.closest('tr').dataset.id; })[0]; if (!row) return;
+                    byId('xId').value = row.id; byId('xQty').value = row.quantity; byId('xPrice').value = row.price;
+                    byId('xNew').checked = row.isNew === 1;
+                    if (row.currencyId) { byId('xCurrency').value = row.currencyId; $(byId('xCurrency')).trigger('change.select2'); }
+                    byId('xCategory').value = row.categoryId || '0'; $(byId('xCategory')).trigger('change.select2');
+                    loadItems(String(row.categoryId || '0'), row.accessoryId);
+                    byId('xSaveText').textContent = 'Update';
+                    byId('accessories').scrollIntoView({ behavior: 'smooth', block: 'center' });
+                });
+                byId('xSave').addEventListener('click', function () {
+                    SD.post(U.accSave, {
+                        id: byId('xId').value, requestId: id, categoryId: byId('xCategory').value, accessoryId: byId('xItem').value,
+                        quantity: byId('xQty').value, price: byId('xPrice').value, currencyId: byId('xCurrency').value, isNew: byId('xNew').checked
+                    }).then(function (res) {
+                        if (!res.success) { SD.toast(res.message, true); return; }
+                        acc = res.accessories; drawAcc(); resetAcc(); SD.toast(res.message);
+                    }).catch(fail);
+                });
+            }
+        })();
+    </script>
+}

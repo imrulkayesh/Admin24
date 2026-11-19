@@ -1,0 +1,436 @@
+@* Views/Service/ServiceList.cshtml
+   LIST PAGE of the Service module - standard look: wwwroot/css/app-standard.css + wwwroot/js/app-standard.js (SD.initList, SD.confirm, SD.post).
+   One view for the old list pages (one tab per old repeater):
+     Approver.aspx         -> Waiting for Approval (approve / reject) | Rejected Request (approve again)
+     AssignService.aspx    -> Un-Assigned (assign / forward) | Instant Service Approval | Assigned (change / forward)  + the two pop-ups
+     MyServiceList.aspx    -> My Services (complete) | Waiting for Revise (revised) | Waiting For Feedback (rate / feedback)
+     MyServiceRequest.aspx -> My Requests | Waiting for Feedback (accept / reject = revise / rate) | Rejected
+     AddAccessories.aspx   -> My Services (accessories)
+   "View" always opens /Service/ViewService/{id} (old View / ServiceRemarks / SEComplete / Ratings / Details pages). *@
+@model AlphaCare.Models.ServiceListPageViewModel
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    bool hasAssign = Model.Sections.Any(s => s.Actions.Contains("assign") || s.Actions.Contains("change"));
+    bool hasForward = Model.Sections.Any(s => s.Actions.Contains("forward"));
+    Func<string?, string> dash = v => string.IsNullOrWhiteSpace(v) || v.Trim() == "-" ? "-" : v.Trim();
+}
+
+<div class="sd-page" data-smart-page>
+    <div class="card shadow-sm border-0">
+
+        <div class="sd-head">
+            <h5 class="mb-0"><i class="fas @Model.Icon me-2"></i>@Model.Title</h5>
+            <span class="sd-date"><i class="far fa-calendar me-1"></i>@DateTime.Today.ToString("dddd, dd MMMM yyyy")</span>
+        </div>
+
+        <div class="card-body">
+            @Html.AntiForgeryToken()
+
+            @if (Model.Sections.Count > 1)
+            {
+                <div class="sd-tabs mb-3">
+                    @for (int i = 0; i < Model.Sections.Count; i++)
+                    {
+                        var sec = Model.Sections[i];
+                        <button type="button" class="sd-tab @(i == 0 ? "active" : "")" data-pane="@sec.Id" style="--c:@sec.Color">
+                            <i class="fas @sec.Icon"></i> @sec.Title <span class="cnt">@sec.Rows.Count</span>
+                        </button>
+                    }
+                </div>
+            }
+
+            <div class="sd-tools">
+                <div class="input-group grow">
+                    <span class="input-group-text bg-white"><i class="fas fa-magnifying-glass text-muted"></i></span>
+                    <input type="text" class="form-control" id="sdSearch" placeholder="Search service id, requester, service center, machine..." autocomplete="off" />
+                </div>
+                <div class="input-group" style="max-width:210px">
+                    <span class="input-group-text bg-white"><i class="far fa-calendar text-muted"></i></span>
+                    <input type="date" class="form-control" id="sdDate" title="Show one date only" />
+                </div>
+                <button type="button" class="sd-link" id="sdClear" style="display:none"><i class="fas fa-xmark me-1"></i>Clear filters</button>
+                <button type="button" class="sd-link" id="sdResetSort" style="display:none"><i class="fas fa-arrow-rotate-left me-1"></i>Default order</button>
+            </div>
+
+            @for (int s = 0; s < Model.Sections.Count; s++)
+            {
+                var sec = Model.Sections[s];
+                <div class="sd-pane @(s == 0 ? "active" : "")" id="pane-@sec.Id">
+                    <div class="sd-wrap table-responsive">
+                        <table class="sd-table">
+                            <thead>
+                                <tr>
+                                    <th class="text-center">Action</th>
+                                    <th class="sortable" data-sort="sid">Service ID<i class="fas fa-sort arr"></i></th>
+                                    <th class="sortable" data-sort="date">Date<i class="fas fa-sort arr"></i></th>
+                                    <th class="sortable" data-sort="from">Request From<i class="fas fa-sort arr"></i></th>
+                                    <th>Department</th>
+                                    <th>Location</th>
+                                    <th class="sortable" data-sort="center">Service Center<i class="fas fa-sort arr"></i></th>
+                                    <th>Category</th>
+                                    <th>Machine/Outlet</th>
+                                    @if (sec.ShowServiceman)
+                                    {
+                                        <th class="sortable" data-sort="sp">Service Person<i class="fas fa-sort arr"></i></th>
+                                    }
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @{ int idx = 0; }
+                                @foreach (var r in sec.Rows)
+                                {
+                                    string search = $"{r.SERVICEID} {r.EMPLOYEENAME} {r.OFFICEMOBILE} {r.DEPARTMENTCODE} {r.CENTERCODE} {r.CENTERNAME} {r.SERVICECENTERNAME} {r.CATEGORYNAME} {r.MACHINE_OUTLET} {r.SERVICEMAN} {r.TEAMNAME}".ToLower();
+                                    <tr data-search="@search" data-id="@r.ID" data-title="@r.SERVICEID - @r.EMPLOYEENAME" data-i="@(idx++)"
+                                        data-date="@(r.CREATEDATE?.ToString("yyyy-MM-dd"))"
+                                        data-k-sid="@((r.SERVICEID ?? "").ToLower())" data-k-date="@(r.CREATEDATE?.Ticks ?? 0)"
+                                        data-k-from="@((r.EMPLOYEENAME ?? "").ToLower())" data-k-center="@((r.SERVICECENTERNAME ?? "").ToLower())"
+                                        data-k-sp="@((r.SERVICEMAN ?? "").ToLower())">
+                                        <td class="text-center text-nowrap" data-label="Action">
+                                            <div class="sd-cell">
+                                                @foreach (var act in sec.Actions)
+                                                {
+                                                    switch (act)
+                                                    {
+                                                        case "approve":
+                                                            <button type="button" class="sd-btn ok" title="Approve" data-act="approve"><i class="fas fa-check"></i></button>
+                                                            break;
+                                                        case "reject":
+                                                            <button type="button" class="sd-btn no" title="Reject" data-act="reject"><i class="fas fa-xmark"></i></button>
+                                                            break;
+                                                        case "assign":
+                                                            <button type="button" class="sd-btn ok" title="Assign" data-act="assign"><i class="fas fa-user-plus"></i></button>
+                                                            break;
+                                                        case "change":
+                                                            <button type="button" class="sd-btn" title="Change" data-act="assign"><i class="fas fa-user-pen"></i></button>
+                                                            break;
+                                                        case "forward":
+                                                            <button type="button" class="sd-btn" title="Forward" data-act="forward"><i class="fas fa-share"></i></button>
+                                                            break;
+                                                        case "instant":
+                                                            <button type="button" class="sd-btn ok" title="Approve" data-act="instant"><i class="fas fa-check"></i></button>
+                                                            break;
+                                                        case "accept":
+                                                            <button type="button" class="sd-btn ok" title="Accept" data-act="accept"><i class="fas fa-thumbs-up"></i></button>
+                                                            break;
+                                                        case "revise":
+                                                            <a class="sd-btn no" title="Reject (send back for revision)" href="@Url.Action("ViewService", "Service", new { id = r.ID })#revise"><i class="fas fa-thumbs-down"></i></a>
+                                                            break;
+                                                        case "rate":
+                                                            <a class="sd-btn" title="Rating" href="@Url.Action("ViewService", "Service", new { id = r.ID })#rate"><i class="fas fa-star"></i></a>
+                                                            break;
+                                                        case "revised":
+                                                            <button type="button" class="sd-btn ok" title="Revised" data-act="revised"><i class="fas fa-rotate"></i></button>
+                                                            break;
+                                                        case "feedback":
+                                                            <button type="button" class="sd-btn ok" title="Feedback (complete without rating)" data-act="feedback"><i class="fas fa-flag-checkered"></i></button>
+                                                            break;
+                                                        case "complete":
+                                                            <a class="sd-btn ok" title="Completed" href="@Url.Action("ViewService", "Service", new { id = r.ID })#complete"><i class="fas fa-circle-check"></i></a>
+                                                            break;
+                                                        case "accessories":
+                                                            <a class="sd-btn ok" title="Accessories" href="@Url.Action("ViewService", "Service", new { id = r.ID })#accessories"><i class="fas fa-toolbox"></i></a>
+                                                            break;
+                                                    }
+                                                }
+                                                <a class="sd-btn" title="View Details" href="@Url.Action("ViewService", "Service", new { id = r.ID })"><i class="fas fa-eye"></i></a>
+                                            </div>
+                                        </td>
+                                        <td data-label="Service ID" class="text-nowrap"><div class="sd-cell"><a class="sd-title" href="@Url.Action("ViewService", "Service", new { id = r.ID })">@dash(r.SERVICEID)</a></div></td>
+                                        <td data-label="Date" class="text-nowrap"><div class="sd-cell">@(r.CREATEDATE?.ToString("dd/MM/yyyy hh:mm tt") ?? "-")</div></td>
+                                        <td data-label="Request From">
+                                            <div class="sd-cell">
+                                                @r.EMPLOYEENAME
+                                                @if (!string.IsNullOrWhiteSpace(r.OFFICEMOBILE))
+                                                {
+                                                    <a class="sd-sub text-decoration-none" href="tel:@r.OFFICEMOBILE"><i class="fas fa-phone me-1"></i>@r.OFFICEMOBILE</a>
+                                                }
+                                            </div>
+                                        </td>
+                                        <td data-label="Department"><div class="sd-cell">@dash(r.DEPARTMENTCODE)</div></td>
+                                        <td data-label="Location"><div class="sd-cell">@dash(r.CENTERNAME ?? r.CENTERCODE)</div></td>
+                                        <td data-label="Service Center">
+                                            <div class="sd-cell">
+                                                @dash(r.SERVICECENTERNAME)
+                                                @if (!string.IsNullOrWhiteSpace(r.SERVICECENTERLOCATION))
+                                                {
+                                                    <span class="sd-sub">@r.SERVICECENTERLOCATION</span>
+                                                }
+                                            </div>
+                                        </td>
+                                        <td data-label="Category"><div class="sd-cell">@dash(r.CATEGORYNAME)</div></td>
+                                        <td data-label="Machine/Outlet"><div class="sd-cell">@dash(r.MACHINE_OUTLET)</div></td>
+                                        @if (sec.ShowServiceman)
+                                        {
+                                            <td data-label="Service Person">
+                                                <div class="sd-cell">
+                                                    @dash(r.SERVICEMAN)
+                                                    @if (!string.IsNullOrWhiteSpace(r.TEAMNAME))
+                                                    {
+                                                        <span class="sd-sub">@r.TEAMNAME</span>
+                                                    }
+                                                    @if (!string.IsNullOrWhiteSpace(r.SERVICEMOBILE))
+                                                    {
+                                                        <a class="sd-sub text-decoration-none" href="tel:@r.SERVICEMOBILE"><i class="fas fa-phone me-1"></i>@r.SERVICEMOBILE</a>
+                                                    }
+                                                </div>
+                                            </td>
+                                        }
+                                        <td data-label="Status"><div class="sd-cell"><span class="sd-badge">@(r.INSTANTSERVICE == 1 && r.ISAPPROVED == 0 ? "Instant - Waiting for Approval" : r.StatusText)</span></div></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="sd-empty" data-empty="all" style="@(sec.Rows.Count == 0 ? "" : "display:none")">
+                        <i class="far fa-folder-open"></i> No request in "@sec.Title".
+                    </div>
+                    <div class="sd-empty" data-empty="filter" style="display:none">
+                        <i class="fas fa-filter-circle-xmark"></i> No request matched your filter.
+                    </div>
+                </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(Model.Note))
+            {
+                <div class="small text-muted mt-2">@Model.Note</div>
+            }
+        </div>
+    </div>
+</div>
+
+@if (hasAssign)
+{
+    <!-- assign pop-up (old mpAssign) -->
+    <div class="modal fade" id="assignModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-user-plus me-2"></i>Assign Service - <span class="am-title"></span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-2">
+                        <div class="col-12">
+                            <label class="form-label fw-semibold" for="aCenter">Service Center <span class="text-danger">*</span></label>
+                            <select id="aCenter" class="form-select" data-native>
+                                <option value="0">-- Select --</option>
+                                @foreach (var c in Model.AssignServiceCenters)
+                                {
+                                    <option value="@c.ID">@c.NAME</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold" for="aTeam">Team <span class="text-danger">*</span></label>
+                            <select id="aTeam" class="form-select" data-native><option value="0">-- Select --</option></select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold" for="aMember">Team Member <span class="text-danger">*</span></label>
+                            <select id="aMember" class="form-select" data-native><option value="">-- Select --</option></select>
+                        </div>
+                        <div class="col-7">
+                            <label class="form-label fw-semibold" for="aStartDate">Start Date <span class="text-danger">*</span></label>
+                            <input type="date" id="aStartDate" class="form-control" />
+                        </div>
+                        <div class="col-5">
+                            <label class="form-label fw-semibold" for="aStartHour">Time</label>
+                            <select id="aStartHour" class="form-select hour-list" data-native></select>
+                        </div>
+                        <div class="col-7">
+                            <label class="form-label fw-semibold" for="aEndDate">End Date <span class="text-danger">*</span></label>
+                            <input type="date" id="aEndDate" class="form-control" />
+                        </div>
+                        <div class="col-5">
+                            <label class="form-label fw-semibold" for="aEndHour">Time</label>
+                            <select id="aEndHour" class="form-select hour-list" data-native></select>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="aSave"><i class="fas fa-user-check me-1"></i>Assign</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (hasForward)
+{
+    <!-- forward pop-up (old mpForward): sends the service items as a dispatch to the admin of another service center -->
+    <div class="modal fade" id="forwardModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-share me-2"></i>Forward Service - <span class="fm-title"></span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-2">
+                        <div class="col-12">
+                            <label class="form-label fw-semibold" for="fCenter">Business Center <span class="text-danger">*</span></label>
+                            <select id="fCenter" class="form-select" data-native>
+                                <option value="0">-- Select --</option>
+                                @foreach (var c in Model.BusinessCenters)
+                                {
+                                    <option value="@c.ID">@c.CENTERNAME</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold" for="fServiceCenter">Service Center <span class="text-danger">*</span></label>
+                            <select id="fServiceCenter" class="form-select" data-native><option value="0">-- Select --</option></select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold" for="fIssue">Issue Type <span class="text-danger">*</span></label>
+                            <select id="fIssue" class="form-select" data-native>
+                                @foreach (var t in Model.IssueTypes)
+                                {
+                                    <option value="@t.ID">@t.ISSUETYPENAME</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <div class="form-check mt-1">
+                                <input class="form-check-input" type="checkbox" id="fDirect" />
+                                <label class="form-check-label fw-semibold" for="fDirect">Direct Send (Without Dispatch)</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="small text-muted mt-2"><i class="fas fa-circle-info me-1"></i>The items of this request are sent as a dispatch (Create Dispatch draft of your account; items already in that draft are replaced).</div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="fSave"><i class="fas fa-share me-1"></i>Forward</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@section Scripts {
+    <script>
+        (function () {
+            SD.initList();
+
+            var U = {
+                approve: '@Url.Action("Approve", "Service")',
+                reject: '@Url.Action("Reject", "Service")',
+                instant: '@Url.Action("ApproveInstant", "Service")',
+                accept: '@Url.Action("Accept", "Service")',
+                revised: '@Url.Action("MarkRevised", "Service")',
+                feedback: '@Url.Action("GiveFeedback", "Service")',
+                assign: '@Url.Action("Assign", "Service")',
+                forward: '@Url.Action("Forward", "Service")',
+                teams: '@Url.Action("AssignTeams", "Service")',
+                members: '@Url.Action("AssignMembers", "Service")',
+                serviceCenters: '@Url.Action("ServiceCenters", "Service")'
+            };
+            var byId = function (id) { return document.getElementById(id); };
+            function reloadSoon(res) { if (res && res.success) { SD.toast(res.message); setTimeout(function () { location.reload(); }, 900); } }
+            function getJson(url, q) {
+                return fetch(url + '?' + new URLSearchParams(q).toString(), { credentials: 'same-origin' })
+                    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
+            }
+            function fill(sel, list, first) {
+                sel.innerHTML = first;
+                list.forEach(function (o) { sel.add(new Option(o.name, o.id)); });
+            }
+
+            /* ----- confirm actions of one row ----- */
+            var C = {
+                approve: { title: 'Approve this request?', tone: 'success', icon: 'fa-check', yesText: 'Approve', reason: true },
+                reject: { title: 'Reject this request?', tone: 'danger', icon: 'fa-xmark', yesText: 'Reject', reason: true },
+                instant: { title: 'Approve this instant service?', tone: 'success', icon: 'fa-check', yesText: 'Approve', reason: true },
+                accept: { title: 'Accept this service?', tone: 'success', icon: 'fa-thumbs-up', yesText: 'Accept' },
+                revised: { title: 'Mark this service as revised?', tone: 'success', icon: 'fa-rotate', yesText: 'Revised' },
+                feedback: { title: 'Complete this service without a rating?', tone: 'success', icon: 'fa-flag-checkered', yesText: 'Complete' }
+            };
+
+            var currentId = 0;
+            document.querySelectorAll('.sd-btn[data-act]').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    var tr = b.closest('tr'), act = b.dataset.act, id = tr.dataset.id;
+                    if (act === 'assign') { openAssign(id, tr.dataset.title); return; }
+                    if (act === 'forward') { openForward(id, tr.dataset.title); return; }
+                    var o = C[act]; if (!o) return;
+                    SD.confirm({
+                        title: o.title, text: tr.dataset.title, tone: o.tone, icon: o.icon, yesText: o.yesText,
+                        reason: o.reason ? { label: 'Remarks (optional)', max: 150 } : null,
+                        run: function (remarks) { return SD.post(U[act], { id: id, remarks: remarks || '' }); }
+                    }).then(reloadSoon);
+                });
+            });
+
+            /* ----- assign pop-up (old mpAssign: service center -> team -> member, start / end date + hour) ----- */
+            var hours = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5, 6, 7, 8];   // old list order
+            document.querySelectorAll('.hour-list').forEach(function (s) {
+                hours.forEach(function (h) { s.add(new Option((h < 10 ? '0' : '') + h + ':00', h)); });
+            });
+            function loadTeams() {
+                fill(byId('aTeam'), [], '<option value="0">-- Select --</option>');
+                fill(byId('aMember'), [], '<option value="">-- Select --</option>');
+                if (byId('aCenter').value === '0') return Promise.resolve();
+                return getJson(U.teams, { serviceCenterId: byId('aCenter').value })
+                    .then(function (list) { fill(byId('aTeam'), list, '<option value="0">-- Select --</option>'); if (list.length === 1) { byId('aTeam').value = list[0].id; return loadMembers(); } })
+                    .catch(function () { SD.toast('Could not load the teams.', true); });
+            }
+            function loadMembers() {
+                fill(byId('aMember'), [], '<option value="">-- Select --</option>');
+                if (byId('aTeam').value === '0') return Promise.resolve();
+                return getJson(U.members, { serviceCenterId: byId('aCenter').value, teamId: byId('aTeam').value })
+                    .then(function (list) { fill(byId('aMember'), list, '<option value="">-- Select --</option>'); })
+                    .catch(function () { SD.toast('Could not load the team members.', true); });
+            }
+            function openAssign(id, title) {
+                currentId = id;
+                document.querySelector('#assignModal .am-title').textContent = title;
+                var c = byId('aCenter');
+                if (c.options.length === 2 && c.value === '0') c.selectedIndex = 1;      // only one service center -> pick it
+                loadTeams();
+                bootstrap.Modal.getOrCreateInstance(byId('assignModal')).show();
+            }
+            if (byId('aCenter')) {
+                byId('aCenter').addEventListener('change', loadTeams);
+                byId('aTeam').addEventListener('change', loadMembers);
+                byId('aSave').addEventListener('click', function () {
+                    var btn = this, html = btn.innerHTML; SD.lock(btn, 'Saving...');
+                    SD.post(U.assign, {
+                        id: currentId, serviceCenterId: byId('aCenter').value, teamId: byId('aTeam').value, memberStaffId: byId('aMember').value,
+                        startDate: byId('aStartDate').value, startHour: byId('aStartHour').value, endDate: byId('aEndDate').value, endHour: byId('aEndHour').value
+                    }).then(function (res) {
+                        if (res.success) { bootstrap.Modal.getOrCreateInstance(byId('assignModal')).hide(); reloadSoon(res); }
+                        else { SD.toast(res.message, true); btn.disabled = false; btn.innerHTML = html; }
+                    }).catch(function () { SD.toast('Server error. Please try again.', true); btn.disabled = false; btn.innerHTML = html; });
+                });
+            }
+
+            /* ----- forward pop-up (old mpForward) ----- */
+            function openForward(id, title) {
+                currentId = id;
+                document.querySelector('#forwardModal .fm-title').textContent = title;
+                bootstrap.Modal.getOrCreateInstance(byId('forwardModal')).show();
+            }
+            if (byId('fCenter')) {
+                byId('fCenter').addEventListener('change', function () {
+                    fill(byId('fServiceCenter'), [], '<option value="0">-- Select --</option>');
+                    if (this.value === '0') return;
+                    getJson(U.serviceCenters, { centerId: this.value })
+                        .then(function (list) { fill(byId('fServiceCenter'), list, '<option value="0">-- Select --</option>'); })
+                        .catch(function () { SD.toast('Could not load the service centers.', true); });
+                });
+                byId('fSave').addEventListener('click', function () {
+                    var btn = this, html = btn.innerHTML; SD.lock(btn, 'Forwarding...');
+                    SD.post(U.forward, {
+                        id: currentId, centerId: byId('fCenter').value, serviceCenterId: byId('fServiceCenter').value,
+                        issueTypeId: byId('fIssue').value, directSend: byId('fDirect').checked
+                    }).then(function (res) {
+                        if (res.success) { bootstrap.Modal.getOrCreateInstance(byId('forwardModal')).hide(); reloadSoon(res); }
+                        else { SD.toast(res.message, true); btn.disabled = false; btn.innerHTML = html; }
+                    }).catch(function () { SD.toast('Server error. Please try again.', true); btn.disabled = false; btn.innerHTML = html; });
+                });
+            }
+        })();
+    </script>
+}

@@ -1,0 +1,315 @@
+@* Views/Service/ServiceReport.cshtml - one page for all Service reports (same look and behaviour as Views/Dispatch/DispatchReport.cshtml).
+   (old YA: Reports/Service/ServiceCenter.aspx, ServiceRequest.aspx + the new date-range reports.)
+   The controller says which filters and columns the report has. Filters are sent with GET (the address can be bookmarked);
+   "Excel" downloads the same rows. Columns of kind "sum" get a total row; "sid" opens the request (old btnView -> View.aspx). *@
+@model AlphaCare.Models.ServiceReportViewModel
+@using AlphaCare.Models
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = Model.Title;
+    var f = Model.Filter;
+    var F = Model.Filters;
+    bool has(ServiceReportFilters x) => F.HasFlag(x);
+    string d(DateTime? v) => v?.ToString("yyyy-MM-dd") ?? "";
+
+    var q = new Dictionary<string, string?>
+    {
+        ["run"] = "1", ["export"] = "1",
+        ["From"] = f.From?.ToString("yyyy-MM-dd"), ["To"] = f.To?.ToString("yyyy-MM-dd"),
+        ["LocationId"] = f.LocationId > 0 ? f.LocationId.ToString() : null,
+        ["ServiceCenterId"] = f.ServiceCenterId > 0 ? f.ServiceCenterId.ToString() : null,
+        ["CategoryId"] = f.CategoryId > 0 ? f.CategoryId.ToString() : null,
+        ["Status"] = string.IsNullOrEmpty(f.Status) ? null : f.Status,
+        ["Instant"] = string.IsNullOrEmpty(f.Instant) ? null : f.Instant,
+        ["ServiceId"] = string.IsNullOrEmpty(f.ServiceId) ? null : f.ServiceId,
+        ["FromStaff"] = string.IsNullOrEmpty(f.FromStaff) ? null : f.FromStaff,
+        ["ServicePerson"] = string.IsNullOrEmpty(f.ServicePerson) ? null : f.ServicePerson
+    };
+    string exportUrl = Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(Url.Action(Model.Action, "Service")!,
+                           q.Where(kv => kv.Value != null).ToDictionary(kv => kv.Key, kv => kv.Value));
+
+    string text(object? v, string kind) => v switch
+    {
+        null => "",
+        DateTime dt when kind == "day" => dt.ToString("dd/MM/yyyy"),
+        DateTime dt => dt.ToString("dd/MM/yyyy hh:mm tt"),
+        decimal m => m.ToString("#,0.##"),
+        double x => x.ToString("#,0.##"),
+        _ => Convert.ToString(v) ?? ""
+    };
+    string sortKey(object? v) => v switch
+    {
+        null => "",
+        DateTime dt => dt.Ticks.ToString(),
+        decimal or double or int or long => Convert.ToDecimal(v).ToString("000000000000.####", System.Globalization.CultureInfo.InvariantCulture),
+        _ => (Convert.ToString(v) ?? "").ToLowerInvariant()
+    };
+    bool numeric(string kind) => kind is "num" or "sum";
+    bool totals = Model.Searched && Model.Rows.Count > 0 && Model.Columns.Any(c => c.Kind == "sum");
+    decimal total(string key) => Model.Rows.Sum(r => r.TryGetValue(key, out var v) && v != null && v is not string ? Convert.ToDecimal(v) : 0m);
+}
+
+<div class="sd-page" data-smart-page>
+    <div class="card shadow-sm border-0">
+        <div class="sd-head">
+            <h5 class="mb-0"><i class="fas @Model.Icon me-2"></i>@Model.Title</h5>
+            <span class="sd-date"><i class="far fa-calendar me-1"></i>@DateTime.Today.ToString("dddd, dd MMMM yyyy")</span>
+        </div>
+
+        <div class="card-body">
+            @if (!string.IsNullOrEmpty(Model.Note))
+            {
+                <p class="text-muted small mb-2"><i class="fas fa-circle-info me-1"></i>@Model.Note</p>
+            }
+
+            @if (F != ServiceReportFilters.None)
+            {
+                <form method="get" action="@Url.Action(Model.Action, "Service")" class="row g-2 align-items-end mb-3" autocomplete="off">
+                    <input type="hidden" name="run" value="1" />
+                    @if (has(ServiceReportFilters.ServiceId))
+                    {
+                        <div class="col-md-2">
+                            <label for="rSid" class="form-label fw-semibold">Service ID</label>
+                            <input type="text" id="rSid" name="ServiceId" class="form-control" maxlength="30" value="@f.ServiceId" placeholder="Enter Service ID" />
+                        </div>
+                    }
+                    @if (has(ServiceReportFilters.Dates))
+                    {
+                        <div class="col-6 col-md-2">
+                            <label for="rFrom" class="form-label fw-semibold">From</label>
+                            <input type="date" id="rFrom" name="From" class="form-control" value="@d(f.From)" />
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <label for="rTo" class="form-label fw-semibold">To</label>
+                            <input type="date" id="rTo" name="To" class="form-control" value="@d(f.To)" />
+                        </div>
+                    }
+                    @if (has(ServiceReportFilters.Location))
+                    {
+                        <div class="col-md-3">
+                            <label for="rLoc" class="form-label fw-semibold">Location</label>
+                            <select id="rLoc" name="LocationId" class="form-select">
+                                <option value="0">ALL</option>
+                                @foreach (var c in Model.Locations)
+                                {
+                                    <option value="@c.ID" selected="@(c.ID == f.LocationId)">@c.CENTERNAME</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                    @if (has(ServiceReportFilters.ServiceCenter))
+                    {
+                        <div class="col-md-3">
+                            <label for="rSc" class="form-label fw-semibold">Service Center</label>
+                            <select id="rSc" name="ServiceCenterId" class="form-select">
+                                <option value="0">ALL</option>
+                                @foreach (var s in Model.ServiceCenters)
+                                {
+                                    <option value="@s.ID" selected="@(s.ID == f.ServiceCenterId)">@s.NAME</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                    @if (has(ServiceReportFilters.Category))
+                    {
+                        <div class="col-md-2">
+                            <label for="rCat" class="form-label fw-semibold">Service Type</label>
+                            <select id="rCat" name="CategoryId" class="form-select">
+                                <option value="0">ALL</option>
+                                @foreach (var c in Model.Categories)
+                                {
+                                    <option value="@c.ID" selected="@(c.ID == f.CategoryId)">@c.NAME</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                    @if (has(ServiceReportFilters.Status))
+                    {
+                        <div class="col-md-3">
+                            <label for="rStatus" class="form-label fw-semibold">Service Status</label>
+                            <select id="rStatus" name="Status" class="form-select">
+                                <option value="">ALL</option>
+                                @foreach (var s in ServiceReportViewModel.StatusChoices)
+                                {
+                                    <option value="@s.Value" selected="@(s.Value == f.Status)">@s.Text</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                    @if (has(ServiceReportFilters.Instant))
+                    {
+                        <div class="col-6 col-md-2">
+                            <label for="rInst" class="form-label fw-semibold">Instant Service</label>
+                            <select id="rInst" name="Instant" class="form-select">
+                                <option value="" selected="@(string.IsNullOrEmpty(f.Instant))">ALL</option>
+                                <option value="0" selected="@(f.Instant == "0")">No</option>
+                                <option value="1" selected="@(f.Instant == "1")">Yes</option>
+                            </select>
+                        </div>
+                    }
+                    @if (has(ServiceReportFilters.FromStaff))
+                    {
+                        <div class="col-md-3">
+                            <label for="rFrom2" class="form-label fw-semibold">From Staff ID</label>
+                            <input type="text" id="rFrom2" name="FromStaff" class="form-control rp-emp" list="dlEmp" maxlength="200" value="@f.FromStaff" placeholder="Requester staff ID or name" />
+                        </div>
+                    }
+                    @if (has(ServiceReportFilters.ServicePerson))
+                    {
+                        <div class="col-md-3">
+                            <label for="rSp" class="form-label fw-semibold">Service Person</label>
+                            <input type="text" id="rSp" name="ServicePerson" class="form-control rp-emp" list="dlEmp" maxlength="200" value="@f.ServicePerson" placeholder="Service person staff ID or name" />
+                        </div>
+                    }
+                    <datalist id="dlEmp"></datalist>
+                    <div class="col-md-auto d-flex gap-2">
+                        <button type="submit" class="btn btn-primary"><i class="fas fa-magnifying-glass me-1"></i>Search</button>
+                        <a class="btn btn-outline-warning" href="@Url.Action(Model.Action, "Service")"><i class="fas fa-rotate-left me-1"></i>Reset</a>
+                        @if (Model.Searched && Model.Rows.Count > 0)
+                        {
+                            <a class="btn btn-outline-success" href="@exportUrl"><i class="fas fa-file-excel me-1"></i>Excel (CSV)</a>
+                        }
+                    </div>
+                </form>
+            }
+            else if (Model.Searched && Model.Rows.Count > 0)
+            {
+                <div class="mb-3"><a class="btn btn-sm btn-outline-success" href="@exportUrl"><i class="fas fa-file-excel me-1"></i>Excel (CSV)</a></div>
+            }
+
+            @if (!string.IsNullOrEmpty(Model.Message))
+            {
+                <div class="alert alert-warning py-2"><i class="fas fa-circle-exclamation me-1"></i>@Model.Message</div>
+            }
+
+            @if (Model.Searched)
+            {
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                    <span class="fw-semibold">@Model.Rows.Count row(s)</span>
+                    @if (Model.Truncated)
+                    {
+                        <span class="text-danger small"><i class="fas fa-triangle-exclamation me-1"></i>Only the first @Model.MaxRows rows are shown. Please narrow the filter.</span>
+                    }
+                </div>
+
+                <div class="sd-tools">
+                    <div class="input-group grow">
+                        <span class="input-group-text bg-white"><i class="fas fa-magnifying-glass text-muted"></i></span>
+                        <input type="text" class="form-control" id="sdSearch" placeholder="Search in the result..." autocomplete="off" />
+                    </div>
+                    <button type="button" class="sd-link" id="sdClear" style="display:none"><i class="fas fa-xmark me-1"></i>Clear filters</button>
+                    <button type="button" class="sd-link" id="sdResetSort" style="display:none"><i class="fas fa-arrow-rotate-left me-1"></i>Default order</button>
+                </div>
+
+                <div class="sd-pane active" id="pane-all" data-page-size="25">
+                    <div class="sd-wrap table-responsive">
+                        <table class="sd-table">
+                            <thead>
+                                <tr>
+                                    <th class="text-center">#</th>
+                                    @for (int c = 0; c < Model.Columns.Count; c++)
+                                    {
+                                        <th class="sortable text-nowrap @(numeric(Model.Columns[c].Kind) ? "text-end" : "")" data-sort="c@(c)">@Model.Columns[c].Header<i class="fas fa-sort arr"></i></th>
+                                    }
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @for (int i = 0; i < Model.Rows.Count; i++)
+                                {
+                                    var row = Model.Rows[i];
+                                    var cells = Model.Columns.Select(col => { row.TryGetValue(col.Key, out var v); return v; }).ToList();
+                                    string search = string.Join(" ", cells.Select((v, k) => text(v, Model.Columns[k].Kind))).ToLowerInvariant();
+                                    row.TryGetValue("ID", out var idObj);
+                                    long rowId = idObj == null ? 0 : Convert.ToInt64(idObj);
+                                    string keys = string.Join(" ", cells.Select((v, c) => $"data-k-c{c}=\"{System.Text.Encodings.Web.HtmlEncoder.Default.Encode(sortKey(v))}\""));
+                                    <tr data-search="@search" data-i="@i" @Html.Raw(keys)>
+                                        <td class="text-center text-muted" data-label="#"><div class="sd-cell">@(i + 1)</div></td>
+                                        @for (int c = 0; c < cells.Count; c++)
+                                        {
+                                            var col = Model.Columns[c];
+                                            string t = text(cells[c], col.Kind);
+                                            <td data-label="@col.Header" class="@(col.Kind is "date" or "day" or "sid" ? "text-nowrap" : "") @(numeric(col.Kind) ? "text-end" : "")">
+                                                <div class="sd-cell">
+                                                    @if (col.Kind == "sid" && rowId > 0)
+                                                    {
+                                                        <a class="sd-title" href="@Url.Action("ViewService", "Service", new { id = rowId })" title="View Details">@(t.Length == 0 ? "View" : t)</a>
+                                                    }
+                                                    else
+                                                    {
+                                                        @(t.Length == 0 ? "-" : t)
+                                                    }
+                                                </div>
+                                            </td>
+                                        }
+                                    </tr>
+                                }
+                            </tbody>
+                            @if (totals)
+                            {
+                                <tfoot>
+                                    <tr class="fw-bold">
+                                        <td class="text-center" data-label="#">&Sigma;</td>
+                                        @foreach (var col in Model.Columns)
+                                        {
+                                            <td class="text-end" data-label="@col.Header">@(col.Kind == "sum" ? total(col.Key).ToString("#,0.##") : "")</td>
+                                        }
+                                    </tr>
+                                </tfoot>
+                            }
+                        </table>
+                    </div>
+                    <div class="sd-empty" data-empty="all" style="@(Model.Rows.Count == 0 ? "" : "display:none")"><i class="far fa-folder-open"></i> No data found.</div>
+                    <div class="sd-empty" data-empty="filter" style="display:none"><i class="fas fa-filter-circle-xmark"></i> No row matched your search.</div>
+                </div>
+                @if (totals)
+                {
+                    <div class="small text-muted mt-1">&Sigma; = total of all @Model.Rows.Count row(s) found (the search box does not change it).</div>
+                }
+            }
+            else if (string.IsNullOrEmpty(Model.Message))
+            {
+                <div class="text-muted"><i class="fas fa-filter me-1"></i>Choose the filters and press Search.</div>
+            }
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            var byId = function (id) { return document.getElementById(id); };
+            if (byId('pane-all')) SD.initList();
+
+            // staff auto complete (old AutoCompleteExtender)
+            var searchUrl = '@Url.Action("SearchEmployee", "Service")';
+            document.querySelectorAll('.rp-emp').forEach(function (box) {
+                var t = null;
+                box.addEventListener('input', function () {
+                    clearTimeout(t);
+                    var q = box.value.trim();
+                    if (q.length < 2) return;
+                    t = setTimeout(function () {
+                        fetch(searchUrl + '?term=' + encodeURIComponent(q), { credentials: 'same-origin' }).then(function (r) { return r.json(); })
+                            .then(function (list) { byId('dlEmp').innerHTML = list.map(function (s) { return '<option value="' + SD.esc(s) + '"></option>'; }).join(''); })
+                            .catch(function () { });
+                    }, 250);
+                });
+            });
+
+            // service type follows the service center (old ddlServiceCenter AutoPostBack -> ddlServiceType)
+            var sc = byId('rSc'), cat = byId('rCat');
+            if (sc && cat) {
+                window.jQuery(sc).on('change', function () {
+                    cat.innerHTML = '<option value="0">ALL</option>';
+                    window.jQuery(cat).trigger('change.select2');
+                    if (sc.value === '0') return;
+                    fetch('@Url.Action("Categories", "Service")?serviceCenterId=' + encodeURIComponent(sc.value), { credentials: 'same-origin' })
+                        .then(function (r) { return r.json(); })
+                        .then(function (list) { list.forEach(function (o) { cat.add(new Option(o.name, o.id)); }); window.jQuery(cat).trigger('change.select2'); })
+                        .catch(function () { });
+                });
+            }
+        })();
+    </script>
+}
