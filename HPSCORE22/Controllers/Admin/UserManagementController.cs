@@ -154,7 +154,8 @@ namespace Admin24.Controllers.Admin
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Save user failed. Staff={Staff} Edit={Edit}", r.StaffId, r.IsEdit);
-                return Fail(r.IsEdit ? "Update failed. Please try again." : "Save failed. Please try again.");
+                // admin-only page: show the database reason (as Module / Task Manager / Task Permission do)
+                return Fail((r.IsEdit ? "Update failed. " : "Save failed. ") + DbReason(ex));
             }
         }
 

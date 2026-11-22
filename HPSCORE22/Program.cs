@@ -47,6 +47,8 @@ builder.Services.AddScoped<IDispatchRepository, DispatchRepository>();          
 builder.Services.AddSingleton<DispatchAttachmentStore>();                       // Dispatch item attachments (Dispatch:AttachmentFolder)
 builder.Services.AddScoped<IServiceRepository, ServiceRepository>();            // Service module (port of YA Pages/Service)
 builder.Services.AddSingleton<ServiceAttachmentStore>();                        // Service item attachments (Service:AttachmentFolder)
+builder.Services.AddScoped<IRegisterKhataRepository, RegisterKhataRepository>();  // Register Khata module (port of YA Pages/RegisterKhata)
+builder.Services.AddHttpClient<HrisStaffService>(c => c.Timeout = TimeSpan.FromSeconds(10)); // HRIS staff check (Register Khata - Issue)
 
 builder.Services.AddScoped<IModuleDashboardProvider, MeetingDashboardProvider>();
 builder.Services.AddScoped<IModuleDashboardProvider, DispatchDashboardProvider>();

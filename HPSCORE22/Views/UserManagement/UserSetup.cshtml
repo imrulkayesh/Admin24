@@ -189,7 +189,17 @@
                 }, 250);
             });
 
+            // the drop downs are Select2 (app-standard.js): after setting .value the visible box must be refreshed,
+            // otherwise Edit shows the previous choices while other values are posted
+            function setSel(el, v) {
+                el.value = (v === null || v === undefined) ? '' : String(v);
+                if (el.value === '' && el.options.length > 0 && (v === null || v === undefined || v === '')) el.selectedIndex = 0;
+                if (window.jQuery) window.jQuery(el).trigger('change.select2');
+            }
+            var selIds = ['fRole', 'fCenter', 'fCompany', 'fDept', 'fDesig'];
+
             function reset() {
+                selIds.forEach(function (id) { setSel(byId(id), ''); });
                 byId('fEdit').value = '0';
                 ['fStaff', 'fName', 'fMobile', 'fEmail', 'fPwd', 'fPwd2'].forEach(function (id) { byId(id).value = ''; });
                 byId('fStaff').readOnly = false;
@@ -209,8 +219,9 @@
                         byId('fName').value = u.EMPLOYEENAME || '';
                         byId('fMobile').value = u.OFFICEMOBILE || '';
                         byId('fEmail').value = u.OFFICEMAIL || '';
-                        byId('fRole').value = u.ROLEID; byId('fCenter').value = u.BUSINESSCENTERID;
-                        byId('fCompany').value = u.COMPANYID; byId('fDept').value = u.DEPTID; byId('fDesig').value = u.DESIGNATIONID;
+                        setSel(byId('fRole'), u.ROLEID); setSel(byId('fCenter'), u.BUSINESSCENTERID);
+                        setSel(byId('fCompany'), u.COMPANYID); setSel(byId('fDept'), u.DEPTID); setSel(byId('fDesig'), u.DESIGNATIONID);
+                        if (!byId('fRole').value) SD.toast('This user\'s role is not in your Role list - choose a role before Update.', true);
                         byId('fSaveText').textContent = 'Update';
                         byId('pwdWrap').style.display = byId('pwdWrap2').style.display = '';
                         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -237,13 +248,22 @@
                 e.preventDefault();
                 var isEdit = byId('fEdit').value === '1';
                 var pwd = byId('fPwd').value;
+                if (!byId('fStaff').value.trim()) { SD.toast('Enter the Staff ID.', true); return; }
+                if (!byId('fName').value.trim()) { SD.toast('Enter the Name.', true); return; }
                 if (isEdit && pwd && pwd !== byId('fPwd2').value) { SD.toast('Password and confirm password does not match', true); return; }
+                var btn = e.submitter || byId('fm').querySelector('button[type="submit"]');
+                var btnHtml = btn.innerHTML;
+                var unlock = function () { btn.disabled = false; btn.innerHTML = btnHtml; };
+                SD.lock(btn, isEdit ? 'Updating...' : 'Saving...');
                 SD.post('@Url.Action("SaveUser", "UserManagement")', {
                     StaffId: byId('fStaff').value, Name: byId('fName').value, Mobile: byId('fMobile').value, Email: byId('fEmail').value,
                     Password: isEdit ? pwd : '', RoleId: byId('fRole').value, CenterId: byId('fCenter').value,
                     CompanyId: byId('fCompany').value, DepartmentId: byId('fDept').value, DesignationId: byId('fDesig').value, IsEdit: isEdit
-                }).then(function (res) { SD.toast(res.message, !res.success); if (res.success) setTimeout(function () { location.reload(); }, 800); })
-                  .catch(function () { SD.toast('Server error. Please try again.', true); });
+                }).then(function (res) {
+                    SD.toast(res.message, !res.success);
+                    if (res.success) setTimeout(function () { location.reload(); }, 800);
+                    else unlock();
+                }).catch(function () { unlock(); SD.toast('Server error. Please try again.', true); });
             });
         })();
     </script>

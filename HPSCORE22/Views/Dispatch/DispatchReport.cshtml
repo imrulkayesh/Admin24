@@ -52,6 +52,50 @@
     };
 }
 
+@if (Model.Wide)
+{
+    @* All dispatch reports (up to 17 columns). The result gets its own scroll box in BOTH directions, so the
+       first (left) columns can never be pushed out of view and the last (right) columns are always reachable,
+       on desktop and on phones (where the table stays a table instead of the stacked card rows). *@
+    <style>
+        .sd-page, .sd-page > .card, .sd-page .card-body, .sd-page .sd-pane { min-width: 0; max-width: 100%; }
+        .rp-scroll {
+            display: block !important; position: relative; width: 100%; max-width: 100%;
+            overflow: auto !important; max-height: max(320px, calc(100vh - 290px));
+            -webkit-overflow-scrolling: touch; overscroll-behavior: contain; direction: ltr; text-align: left;
+            border: 1px solid #e2e8f0; border-radius: 8px; margin: 0;
+        }
+        .rp-scroll:focus-visible { outline: 2px solid #6366f1; outline-offset: 2px; }
+        .rp-scroll > table.sd-table { width: max-content; min-width: 100%; margin: 0 !important; table-layout: auto; }
+        .rp-scroll .sd-table th, .rp-scroll .sd-table td { white-space: nowrap; }
+        .rp-scroll .sd-table td[data-label="Notes"], .rp-scroll .sd-table td[data-label="Item"],
+        .rp-scroll .sd-table td[data-label="Visitor Address"] { white-space: normal; min-width: 180px; max-width: 320px; }
+        .rp-scroll .sd-table td.no-export { white-space: nowrap; }
+        /* header stays on top while scrolling down */
+        .rp-scroll .sd-table thead th { position: sticky; top: 0; z-index: 3; background: #f8fafc; box-shadow: inset 0 -1px 0 #e2e8f0; }
+        /* "#" and the Dispatch ID stay on the left while scrolling sideways */
+        .rp-scroll .sd-table .rp-fix { position: sticky; z-index: 2; background: #fff; }
+        .rp-scroll .sd-table thead .rp-fix { z-index: 4; background: #f8fafc; }
+        .rp-scroll .sd-table .rp-fix0 { left: 0; }
+        .rp-scroll .sd-table .rp-fix1 { left: var(--rp-fix1, 48px); box-shadow: 2px 0 0 #e2e8f0; }
+        @@media (max-width: 767.98px) {
+            .rp-scroll { max-height: 70vh; }
+            /* keep a real table on phones (no stacked card rows) so the scroll box works the same way */
+            .rp-scroll > table.sd-table { display: table !important; }
+            .rp-scroll .sd-table thead { display: table-header-group !important; }
+            .rp-scroll .sd-table tbody { display: table-row-group !important; }
+            .rp-scroll .sd-table tr { display: table-row; }
+            .rp-scroll .sd-table th, .rp-scroll .sd-table td { display: table-cell !important; width: auto !important; padding: .45rem .6rem; }
+            .rp-scroll .sd-table td::before { content: none !important; display: none !important; }
+            .rp-scroll .sd-table td .sd-cell { display: block; text-align: inherit; }
+            .rp-scroll .sd-table .rp-fix1 { box-shadow: 2px 0 0 #e2e8f0; }
+        }
+        @@media (max-width: 575.98px) {
+            .rp-scroll .sd-table .rp-fix1, .rp-scroll .sd-table thead .rp-fix1 { position: static; box-shadow: none; }
+        }
+    </style>
+}
+
 <div class="sd-page" data-smart-page>
     <div class="card shadow-sm border-0">
         <div class="sd-head">
@@ -157,6 +201,14 @@
                             </select>
                         </div>
                     }
+                    @if (has(ReportFilters.CreatedBy))
+                    {
+                        <div class="col-md-3">
+                            <label for="rCreatedBy" class="form-label fw-semibold">Created By ID</label>
+                            <input type="text" id="rCreatedBy" name="Staff" class="form-control" list="dlCreatedBy" maxlength="200" value="@f.Staff" placeholder="Staff ID or name (empty = all)" />
+                            <datalist id="dlCreatedBy"></datalist>
+                        </div>
+                    }
                     @if (has(ReportFilters.Company))
                     {
                         <div class="col-md-3">
@@ -235,19 +287,19 @@
                 </div>
 
                 <div class="sd-pane active" id="pane-all" data-page-size="25">
-                    <div class="sd-wrap table-responsive">
+                    <div class="sd-wrap table-responsive @(Model.Wide ? "rp-scroll" : "")" @(Model.Wide ? Html.Raw("tabindex=\"0\" role=\"region\" aria-label=\"Report result - scroll sideways and down\"") : Html.Raw(""))>
                         <table class="sd-table">
                             <thead>
                                 <tr>
-                                    <th class="text-center">#</th>
+                                    <th class="text-center @(Model.Wide ? "rp-fix rp-fix0" : "")">#</th>
                                     @for (int c = 0; c < Model.Columns.Count; c++)
                                     {
                                         if (Model.Columns[c].Kind == "nrecv")
                                         {
-                                            <th class="text-center sd-noexport">@Model.Columns[c].Header</th>
+                                            <th class="text-center sd-noexport @(Model.Wide && c == 0 ? "rp-fix rp-fix1" : "")">@Model.Columns[c].Header</th>
                                             continue;
                                         }
-                                        <th class="sortable text-nowrap" data-sort="c@(c)">@Model.Columns[c].Header<i class="fas fa-sort arr"></i></th>
+                                        <th class="sortable text-nowrap @(Model.Wide && c == 0 ? "rp-fix rp-fix1" : "")" data-sort="c@(c)">@Model.Columns[c].Header<i class="fas fa-sort arr"></i></th>
                                     }
                                 </tr>
                             </thead>
@@ -262,12 +314,12 @@
                                     // sort keys data-k-c0, data-k-c1 ... (values HTML-encoded)
                                     string keys = string.Join(" ", cells.Select((v, c) => $"data-k-c{c}=\"{System.Text.Encodings.Web.HtmlEncoder.Default.Encode(sortKey(v))}\""));
                                     <tr data-search="@search" data-i="@i" @Html.Raw(keys)>
-                                        <td class="text-center text-muted" data-label="#"><div class="sd-cell">@(i + 1)</div></td>
+                                        <td class="text-center text-muted @(Model.Wide ? "rp-fix rp-fix0" : "")" data-label="#"><div class="sd-cell">@(i + 1)</div></td>
                                         @for (int c = 0; c < cells.Count; c++)
                                         {
                                             var col = Model.Columns[c];
                                             string t = text(cells[c], col.Kind);
-                                            <td data-label="@col.Header" class="@(col.Kind is "date" or "day" or "tx" or "ge" or "notice" ? "text-nowrap" : "") @(col.Kind == "num" ? "text-end" : "") @(col.Kind == "nrecv" ? "text-center no-export" : "")">
+                                            <td data-label="@col.Header" class="@(col.Kind is "date" or "day" or "tx" or "ge" or "notice" ? "text-nowrap" : "") @(col.Kind == "num" ? "text-end" : "") @(col.Kind == "nrecv" ? "text-center no-export" : "") @(Model.Wide && c == 0 ? "rp-fix rp-fix1" : "")">
                                                 <div class="sd-cell">
                                                     @if (col.Kind == "tx" && rowId > 0 && t.Length > 0)
                                                     {
@@ -309,6 +361,10 @@
                             </tbody>
                         </table>
                     </div>
+                    @if (Model.Wide && Model.Rows.Count > 0)
+                    {
+                        <div class="small text-muted mt-1"><i class="fas fa-arrows-up-down-left-right me-1"></i>Scroll the table sideways and down to see every column; the header and the first column stay in place.</div>
+                    }
                     <div class="sd-empty" data-empty="all" style="@(Model.Rows.Count == 0 ? "" : "display:none")"><i class="far fa-folder-open"></i> No data found.</div>
                     <div class="sd-empty" data-empty="filter" style="display:none"><i class="fas fa-filter-circle-xmark"></i> No row matched your search.</div>
                 </div>
@@ -400,6 +456,18 @@
             }
             suggest(byId('rStaff'), 'dlEmp');
             suggest(byId('rText'), 'dlEmp');
+            suggest(byId('rCreatedBy'), 'dlCreatedBy');
+
+            // wide report: the Dispatch ID column sticks right after the "#" column (its width depends on the row count)
+            var box = document.querySelector('.rp-scroll');
+            if (box) {
+                var setFix = function () {
+                    var first = box.querySelector('thead .rp-fix0');
+                    if (first) box.style.setProperty('--rp-fix1', first.getBoundingClientRect().width + 'px');
+                };
+                setFix();
+                window.addEventListener('resize', setFix);
+            }
 
             // LC No. / LC Amount only for dispatch type 3 (old pnlLc)
             var dType = byId('rDType');

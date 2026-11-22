@@ -14,8 +14,8 @@ namespace AlphaCare.Interface
         List<IDictionary<string, object?>> ReportItemsByStaff(DispatchReportFilter f, string staffId);
         /// <summary>Old LocationWiseDispatchOnlineReport.aspx</summary>
         List<IDictionary<string, object?>> ReportLocationSummary(DispatchReportFilter f);
-        /// <summary>Old GatepassStatusReport.aspx</summary>
-        List<IDictionary<string, object?>> ReportGatePassPending(DispatchReportFilter f);
+        /// <summary>Old GatepassStatusReport.aspx (+ optional Created By staff id, "" = everybody)</summary>
+        List<IDictionary<string, object?>> ReportGatePassPending(DispatchReportFilter f, string createdBy);
         /// <summary>Old Pages/Dispatch/GatepassStatus.aspx (my own dispatches)</summary>
         List<IDictionary<string, object?>> ReportMyGatePassStatus(string staffId);
         /// <summary>Old LWReport.aspx</summary>

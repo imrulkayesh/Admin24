@@ -384,6 +384,92 @@
                 margin-top: 2px;
             }
 
+        /* ===== Dispatch Gate Check pending: compact alert + modal (Bootstrap modal structure, in the colours of this page) ===== */
+        .gate-alert {
+            display: none; align-items: center; gap: 10px; padding: 10px 12px; margin-bottom: 18px; border-radius: 12px;
+            background: var(--danger-bg); border: 1px solid #fecaca; border-left: 4px solid var(--danger); color: #991b1b;
+            font-size: .86rem; line-height: 1.4;
+        }
+            .gate-alert.show { display: flex; animation: pop .3s ease both; }
+            .gate-alert > i { color: var(--danger); font-size: 1rem; flex: 0 0 auto; }
+        .gate-alert-text { flex: 1; min-width: 0; }
+            .gate-alert-text b { display: block; font-weight: 700; }
+            .gate-alert-text .gate-badge { margin-top: 5px; }
+        .gate-badge {
+            display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; background: var(--danger);
+            color: #fff; font-size: .74rem; font-weight: 700; white-space: nowrap; vertical-align: middle;
+        }
+        .gate-view {
+            flex: 0 0 auto; border: 1px solid #fca5a5; background: #fff; color: var(--danger); border-radius: 9px; padding: 6px 10px;
+            font: 600 .8rem/1 inherit; font-family: inherit; cursor: pointer; white-space: nowrap; display: inline-flex; gap: 6px; align-items: center;
+        }
+            .gate-view:hover { background: #fee2e2; }
+            .gate-view:focus-visible { outline: 2px solid var(--danger); outline-offset: 2px; }
+
+        .gmodal { position: fixed; inset: 0; z-index: 1055; display: none; align-items: center; justify-content: center; padding: 16px; }
+            .gmodal.show { display: flex; }
+        .gmodal-backdrop { position: absolute; inset: 0; background: rgba(15, 23, 42, .55); backdrop-filter: blur(2px); animation: gfade .2s ease both; }
+        .gmodal-dialog {
+            position: relative; width: 100%; max-width: 760px; max-height: calc(100vh - 32px); display: flex; flex-direction: column;
+            background: #fff; border-radius: 14px; box-shadow: 0 24px 60px rgba(15, 23, 42, .35); overflow: hidden; animation: gup .22s ease both;
+        }
+        .gmodal-header { display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+        .gmodal-ico { flex: 0 0 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; background: #fee2e2; color: var(--danger); }
+        .gmodal-title { margin: 0; font-size: 1.02rem; font-weight: 700; color: #0f172a; line-height: 1.3; }
+        .gmodal-sub { margin: 2px 0 0; font-size: .8rem; color: var(--muted); }
+        .gmodal-close {
+            margin-left: auto; flex: 0 0 auto; width: 34px; height: 34px; border-radius: 9px; border: 0; background: transparent;
+            color: var(--muted); font-size: 1.05rem; cursor: pointer;
+        }
+            .gmodal-close:hover { background: #f1f5f9; color: #0f172a; }
+        .gmodal-body { padding: 0; overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
+        /* the table scrolls in its own box: down for many records, sideways on narrow screens */
+        .gmodal-scroll { overflow: auto; max-height: 60vh; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+            .gmodal-scroll:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+        .gtable { width: 100%; min-width: 560px; border-collapse: separate; border-spacing: 0; font-size: .84rem; }
+            .gtable th {
+                position: sticky; top: 0; z-index: 2; background: #f8fafc; color: #475569; text-align: left; font-weight: 700;
+                font-size: .74rem; text-transform: uppercase; letter-spacing: .02em; padding: 10px 12px; border-bottom: 1px solid var(--border); white-space: nowrap;
+            }
+            .gtable td { padding: 9px 12px; border-bottom: 1px solid #f1f5f9; color: #334155; vertical-align: top; }
+            .gtable tbody tr:nth-child(even) td { background: #fcfcfd; }
+            .gtable tbody tr:hover td { background: #f5f3ff; }
+            .gtable .c-no { width: 40px; color: var(--muted); text-align: right; }
+            .gtable th.c-no { position: sticky; left: 0; z-index: 3; }
+            .gtable td.c-no { position: sticky; left: 0; z-index: 1; background: inherit; }
+            .gtable .c-tx { font-family: Consolas, "Courier New", monospace; font-weight: 700; color: #991b1b; white-space: nowrap; }
+            .gtable .c-date { white-space: nowrap; }
+            .gtable .c-rcv small { display: block; color: var(--muted); font-size: .76rem; }
+        .gmodal-footer {
+            display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 18px; border-top: 1px solid var(--border);
+            background: #fafafa; flex-wrap: wrap;
+        }
+        .gmodal-note { font-size: .78rem; color: var(--muted); display: flex; gap: 6px; align-items: flex-start; flex: 1 1 260px; }
+            .gmodal-note i { color: var(--primary); margin-top: 2px; }
+        .gmodal-actions { display: flex; gap: 8px; margin-left: auto; }
+        .gbtn {
+            border-radius: 9px; padding: 8px 14px; font: 600 .84rem/1 inherit; font-family: inherit; cursor: pointer; display: inline-flex; gap: 6px; align-items: center;
+            border: 1px solid var(--border); background: #fff; color: #334155;
+        }
+            .gbtn:hover { border-color: var(--primary); color: var(--primary); }
+            .gbtn-primary { background: linear-gradient(135deg, var(--primary), var(--primary-2)); color: #fff; border-color: transparent; }
+            .gbtn-primary:hover { color: #fff; filter: brightness(1.05); }
+        body.gmodal-open { overflow: hidden; }
+        body.gmodal-open .toast { z-index: 1060; }                          /* "IDs copied" stays above the modal */
+        @@keyframes gfade { from { opacity: 0; } to { opacity: 1; } }
+        @@keyframes gup { from { opacity: 0; transform: translateY(14px) scale(.98); } to { opacity: 1; transform: none; } }
+        @@media (max-width: 576px) {
+            .gmodal { padding: 10px; align-items: flex-end; }                 /* bottom sheet on phones */
+            .gmodal-dialog { max-height: 88vh; border-radius: 14px; }
+            .gmodal-scroll { max-height: 58vh; }
+            .gmodal-header, .gmodal-footer { padding: 12px 14px; }
+            .gmodal-actions { width: 100%; }
+            .gmodal-actions .gbtn { flex: 1; justify-content: center; }
+            .gate-alert { flex-wrap: wrap; }
+            .gate-view { margin-left: 26px; }
+        }
+        @@media (prefers-reduced-motion: reduce) { .gmodal-backdrop, .gmodal-dialog { animation: none; } }
+
         .alert-danger {
             background: var(--danger-bg);
             color: var(--danger);
@@ -826,6 +912,16 @@
                     <i class="fas fa-circle-exclamation"></i><span id="formAlertText"></span>
                 </div>
 
+                @* Dispatch Gate Check pending: compact alert (the list opens in the modal below) *@
+                <div class="gate-alert" id="gateAlert" role="alert">
+                    <i class="fas fa-user-lock"></i>
+                    <div class="gate-alert-text">
+                        <b id="gateAlertMsg"></b>
+                        <span class="gate-badge" id="gateAlertCount"><i class="fas fa-truck-fast"></i><span></span></span>
+                    </div>
+                    <button type="button" class="gate-view" id="gateView"><i class="fas fa-list"></i> View</button>
+                </div>
+
                 <form id="loginForm" novalidate autocomplete="on">
                     @Html.AntiForgeryToken()
                     <input type="hidden" id="returnUrl" value="@ViewBag.ReturnUrl" />
@@ -868,6 +964,38 @@
 
     <div class="toast" id="toast"></div>
 
+    @* Pending Dispatch Gate Check list (Bootstrap modal structure: dialog, header, body, footer; Esc / backdrop / X close) *@
+    <div class="gmodal" id="gateModal" role="dialog" aria-modal="true" aria-labelledby="gateModalTitle" aria-hidden="true">
+        <div class="gmodal-backdrop" data-gclose></div>
+        <div class="gmodal-dialog" role="document">
+            <div class="gmodal-header">
+                <div class="gmodal-ico"><i class="fas fa-truck-ramp-box"></i></div>
+                <div>
+                    <h5 class="gmodal-title" id="gateModalTitle">Pending Dispatch Gate Check <span class="gate-badge" id="gateModalCount"></span></h5>
+                    <p class="gmodal-sub" id="gateModalSub"></p>
+                </div>
+                <button type="button" class="gmodal-close" data-gclose aria-label="Close"><i class="fas fa-xmark"></i></button>
+            </div>
+            <div class="gmodal-body">
+                <div class="gmodal-scroll" id="gateScroll" tabindex="0" role="region" aria-label="Pending dispatches - scroll to see all">
+                    <table class="gtable">
+                        <thead>
+                            <tr><th class="c-no">#</th><th>Transaction ID</th><th>Date</th><th>Issue Type</th><th>Receiver</th></tr>
+                        </thead>
+                        <tbody id="gateRows"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="gmodal-footer">
+                <div class="gmodal-note"><i class="fas fa-circle-info"></i><span>Please complete the gate checks for these dispatches by coordinating directly with the gate personnel.</span></div>
+                <div class="gmodal-actions">
+                    <button type="button" class="gbtn" id="gateCopy" title="Copy all Transaction IDs"><i class="far fa-copy"></i> Copy IDs</button>
+                    <button type="button" class="gbtn gbtn-primary" data-gclose>Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script>
         $(function () {
@@ -875,15 +1003,82 @@
             var $btn = $('#btnLogin');
 
             /* ---------- helpers ---------- */
-            function showAlert(msg) {
+            function showAlert(msg, pending) {
                 $('#serverError').remove();
-                $('#formAlertText').text(msg);
-                $('#formAlert').addClass('show');
+                if (pending && pending.length) {            // inactive because of pending gate checks: the card, not the plain alert
+                    $('#formAlert').removeClass('show');
+                    showGateCard(msg, pending);
+                } else {
+                    hideGateCard();
+                    $('#formAlertText').text(msg);
+                    $('#formAlert').addClass('show');
+                }
                 $('.shell').removeClass('shake');
                 void document.querySelector('.shell').offsetWidth; // restart animation
                 $('.shell').addClass('shake');
             }
+            // typing hides the plain alert only - the pending list stays readable until the next Sign In
             function hideAlert() { $('#formAlert').removeClass('show'); }
+
+            /* ---------- Dispatch Gate Check pending: compact alert + modal ---------- */
+            var gateIds = [], $gateModal = $('#gateModal'), lastFocus = null;
+            function hideGateCard() { $('#gateAlert').removeClass('show'); closeGateModal(); }
+            function showGateCard(msg, list) {
+                gateIds = $.map(list, function (p) { return p.transactionId; });
+                var count = list.length + ' pending';
+                $('#gateAlertMsg').text(msg);
+                $('#gateAlertCount span').text(count);
+                $('#gateModalCount').text(count);
+                $('#gateModalSub').text(msg);
+                var $rows = $('#gateRows').empty();
+                $.each(list, function (i, p) {
+                    var $rcv = $('<td class="c-rcv">').text(p.receiver || '-');
+                    if (p.receiverLocation) $rcv.append($('<small>').text(p.receiverLocation));
+                    $rows.append($('<tr>')
+                        .append($('<td class="c-no">').text(i + 1))
+                        .append($('<td class="c-tx">').text(p.transactionId))
+                        .append($('<td class="c-date">').text(p.date || '-'))
+                        .append($('<td>').text(p.issueType || '-'))
+                        .append($rcv));
+                });
+                $('#gateAlert').addClass('show');
+                openGateModal();                         // opens by itself when there are pending records
+            }
+            function openGateModal() {
+                lastFocus = document.activeElement;
+                $gateModal.addClass('show').attr('aria-hidden', 'false');
+                $('body').addClass('gmodal-open');
+                $('#gateScroll').scrollTop(0).scrollLeft(0);
+                setTimeout(function () { $gateModal.find('.gmodal-close').trigger('focus'); }, 30);
+            }
+            function closeGateModal() {
+                if (!$gateModal.hasClass('show')) return;
+                $gateModal.removeClass('show').attr('aria-hidden', 'true');
+                $('body').removeClass('gmodal-open');
+                if (lastFocus && lastFocus.focus) lastFocus.focus();
+            }
+            $('#gateView').on('click', openGateModal);
+            $gateModal.on('click', '[data-gclose]', closeGateModal);
+            $(document).on('keydown', function (e) {
+                if (!$gateModal.hasClass('show')) return;
+                if (e.key === 'Escape') { closeGateModal(); return; }
+                if (e.key === 'Tab') {                      // keep the keyboard inside the dialog
+                    var $f = $gateModal.find('button, [tabindex="0"]').filter(':visible');
+                    var first = $f.first()[0], last = $f.last()[0];
+                    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+                    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+                }
+            });
+            $('#gateCopy').on('click', function () {
+                var text = gateIds.join(', ');
+                var done = function () { toast(gateIds.length + ' Transaction ID(s) copied.'); };
+                if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done, function () { fallbackCopy(text); done(); });
+                else { fallbackCopy(text); done(); }
+            });
+            function fallbackCopy(text) {
+                var $t = $('<textarea readonly>').val(text).css({ position: 'fixed', top: '-1000px' }).appendTo('body');
+                $t[0].select(); try { document.execCommand('copy'); } catch (e) { } $t.remove();
+            }
             function setLoading(on) {
                 $btn.prop('disabled', on);
                 $('#btnLabel').html(on ? '<span class="spinner"></span> Signing in...' : btnHtml);
@@ -956,11 +1151,12 @@
                 if (!username || !password) {
                     if (!username) $('#fieldUser').addClass('invalid');
                     if (!password) $('#fieldPass').addClass('invalid');
-                    showAlert('Username and Password are required.');
+                    showAlert('Username and Password are required.', null);
                     return;
                 }
 
                 hideAlert();
+                hideGateCard();
                 setLoading(true);
 
                 $.ajax({
@@ -979,7 +1175,7 @@
                             window.location.href = res.redirect;
                         } else {
                             $('#fieldPass').addClass('invalid');
-                            showAlert((res && res.message) || 'Invalid Username or Password.');
+                            showAlert((res && res.message) || 'Invalid Username or Password.', res && res.pendingDispatches);
                             setLoading(false);
                             $('#password').val('').trigger('focus');
                         }

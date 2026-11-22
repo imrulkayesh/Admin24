@@ -1,0 +1,230 @@
+@* Views/RegisterKhata/RkReport.cshtml - Register Khata reports (old YA: RptVehicleInOut.aspx, WarehouseItemRpt.aspx).
+   Same look as the Dispatch / Service reports: GET filters, search + sort + paging in the result, Excel = CSV of the same rows,
+   result in its own scroll box (both directions, sticky header / first column / totals). *@
+@model AlphaCare.Models.RkReportViewModel
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = Model.Title;
+    string d(DateTime? v) => v?.ToString("yyyy-MM-dd") ?? "";
+    var q = new Dictionary<string, string?> { ["run"] = "1", ["export"] = "1" };
+    if (Model.UsesDates) { q["locationId"] = Model.CenterId.ToString(); q["from"] = d(Model.From); q["to"] = d(Model.To); }
+    if (Model.UsesWarehouse) q["warehouseId"] = Model.WarehouseId.ToString();
+    string exportUrl = Microsoft.AspNetCore.WebUtilities.QueryHelpers.AddQueryString(Url.Action(Model.Action, "RegisterKhata")!, q);
+
+    string text(object? v, string kind) => v switch
+    {
+        null => "",
+        DateTime dt when kind == "day" => dt.ToString("dd/MM/yyyy"),
+        DateTime dt => dt.ToString("dd/MM/yyyy hh:mm tt"),
+        decimal m => m.ToString("#,0.##"),
+        double x => x.ToString("#,0.##"),
+        _ => Convert.ToString(v) ?? ""
+    };
+    string sortKey(object? v) => v switch
+    {
+        null => "",
+        DateTime dt => dt.Ticks.ToString(),
+        decimal or double or int or long => Convert.ToDecimal(v).ToString("000000000000.####", System.Globalization.CultureInfo.InvariantCulture),
+        _ => (Convert.ToString(v) ?? "").ToLowerInvariant()
+    };
+    bool numeric(string kind) => kind is "num" or "sum";
+    bool totals = Model.Searched && Model.Rows.Count > 0 && Model.Columns.Any(c => c.Kind == "sum");
+    decimal total(string key) => Model.Rows.Sum(r => r.TryGetValue(key, out var v) && v != null && v is not string ? Convert.ToDecimal(v) : 0m);
+}
+
+@if (Model.Wide)
+{
+    <style>
+        .sd-page, .sd-page > .card, .sd-page .card-body, .sd-page .sd-pane { min-width: 0; max-width: 100%; }
+        .rp-scroll { display: block !important; position: relative; width: 100%; max-width: 100%; overflow: auto !important;
+                     max-height: max(320px, calc(100vh - 290px)); -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+                     direction: ltr; text-align: left; border: 1px solid #e2e8f0; border-radius: 8px; margin: 0; }
+        .rp-scroll:focus-visible { outline: 2px solid #6366f1; outline-offset: 2px; }
+        .rp-scroll > table.sd-table { width: max-content; min-width: 100%; margin: 0 !important; }
+        .rp-scroll .sd-table th, .rp-scroll .sd-table td { white-space: nowrap; }
+        .rp-scroll .sd-table td[data-label="Remarks"], .rp-scroll .sd-table td[data-label="Item Name"] { white-space: normal; min-width: 160px; max-width: 320px; }
+        .rp-scroll .sd-table thead th { position: sticky; top: 0; z-index: 3; background: #f8fafc; box-shadow: inset 0 -1px 0 #e2e8f0; }
+        .rp-scroll .sd-table tfoot td { position: sticky; bottom: 0; z-index: 3; background: #f1f5f9; box-shadow: inset 0 1px 0 #cbd5e1; }
+        .rp-scroll .sd-table .rp-fix { position: sticky; z-index: 2; background: #fff; }
+        .rp-scroll .sd-table thead .rp-fix { z-index: 4; background: #f8fafc; }
+        .rp-scroll .sd-table tfoot .rp-fix { z-index: 4; background: #f1f5f9; }
+        .rp-scroll .sd-table .rp-fix0 { left: 0; }
+        .rp-scroll .sd-table .rp-fix1 { left: var(--rp-fix1, 48px); box-shadow: 2px 0 0 #e2e8f0; }
+        @@media (max-width: 767.98px) {
+            .rp-scroll { max-height: 70vh; }
+            .rp-scroll > table.sd-table { display: table !important; }
+            .rp-scroll .sd-table thead { display: table-header-group !important; }
+            .rp-scroll .sd-table tbody { display: table-row-group !important; }
+            .rp-scroll .sd-table tfoot { display: table-footer-group !important; }
+            .rp-scroll .sd-table tr { display: table-row; }
+            .rp-scroll .sd-table th, .rp-scroll .sd-table td { display: table-cell !important; width: auto !important; padding: .45rem .6rem; }
+            .rp-scroll .sd-table td::before { content: none !important; display: none !important; }
+            .rp-scroll .sd-table td .sd-cell { display: block; text-align: inherit; }
+        }
+        @@media (max-width: 575.98px) {
+            .rp-scroll .sd-table .rp-fix1 { position: static; box-shadow: none; }
+        }
+    </style>
+}
+
+<div class="sd-page" data-smart-page>
+    <div class="card shadow-sm border-0">
+        <div class="sd-head">
+            <h5 class="mb-0"><i class="fas @Model.Icon me-2"></i>@Model.Title</h5>
+            <span class="sd-date"><i class="far fa-calendar me-1"></i>@DateTime.Today.ToString("dddd, dd MMMM yyyy")</span>
+        </div>
+
+        <div class="card-body">
+            @if (!string.IsNullOrEmpty(Model.Note))
+            {
+                <p class="text-muted small mb-2"><i class="fas fa-circle-info me-1"></i>@Model.Note</p>
+            }
+
+            <form method="get" action="@Url.Action(Model.Action, "RegisterKhata")" class="row g-2 align-items-end mb-3" autocomplete="off">
+                <input type="hidden" name="run" value="1" />
+                @if (Model.UsesDates)
+                {
+                    <div class="col-6 col-md-2">
+                        <label for="rFrom" class="form-label fw-semibold">From Date</label>
+                        <input type="date" id="rFrom" name="from" class="form-control" value="@d(Model.From)" />
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <label for="rTo" class="form-label fw-semibold">To Date</label>
+                        <input type="date" id="rTo" name="to" class="form-control" value="@d(Model.To)" />
+                    </div>
+                    <div class="col-md-3">
+                        <label for="rLoc" class="form-label fw-semibold">Location <span class="text-danger">*</span></label>
+                        <select id="rLoc" name="locationId" class="form-select">
+                            @foreach (var c in Model.Locations)
+                            {
+                                <option value="@c.ID" selected="@(c.ID == Model.CenterId)">@c.CENTERNAME</option>
+                            }
+                        </select>
+                    </div>
+                }
+                @if (Model.UsesWarehouse)
+                {
+                    <div class="col-md-3">
+                        <label for="rCenter" class="form-label fw-semibold">Business Center</label>
+                        <select id="rCenter" class="form-select" disabled="@Model.LockLocation">
+                            @foreach (var c in Model.Locations)
+                            {
+                                <option value="@c.ID" selected="@(c.ID == Model.CenterId)">@c.CENTERNAME</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="rWh" class="form-label fw-semibold">Warehouse</label>
+                        <select id="rWh" name="warehouseId" class="form-select">
+                            <option value="0">Select (all)</option>
+                            @foreach (var w in Model.Warehouses)
+                            {
+                                <option value="@w.ID" selected="@(w.ID == Model.WarehouseId)">@w.NAME</option>
+                            }
+                        </select>
+                    </div>
+                }
+                <div class="col-md-auto d-flex gap-2">
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-magnifying-glass me-1"></i>Search</button>
+                    @if (Model.Searched && Model.Rows.Count > 0)
+                    {
+                        <a class="btn btn-outline-success" href="@exportUrl"><i class="fas fa-file-excel me-1"></i>Excel (CSV)</a>
+                    }
+                </div>
+            </form>
+
+            @if (!string.IsNullOrEmpty(Model.Message))
+            {
+                <div class="alert alert-warning py-2"><i class="fas fa-circle-exclamation me-1"></i>@Model.Message</div>
+            }
+
+            @if (Model.Searched)
+            {
+                <div class="fw-semibold mb-2">@Model.Rows.Count row(s)</div>
+                <div class="sd-tools">
+                    <div class="input-group grow">
+                        <span class="input-group-text bg-white"><i class="fas fa-magnifying-glass text-muted"></i></span>
+                        <input type="text" class="form-control" id="sdSearch" placeholder="Search in the result..." autocomplete="off" />
+                    </div>
+                    <button type="button" class="sd-link" id="sdClear" style="display:none"><i class="fas fa-xmark me-1"></i>Clear filters</button>
+                    <button type="button" class="sd-link" id="sdResetSort" style="display:none"><i class="fas fa-arrow-rotate-left me-1"></i>Default order</button>
+                </div>
+
+                <div class="sd-pane active" id="pane-all" data-page-size="25">
+                    <div class="sd-wrap table-responsive @(Model.Wide ? "rp-scroll" : "")" @(Model.Wide ? Html.Raw("tabindex=\"0\" role=\"region\" aria-label=\"Report result - scroll sideways and down\"") : Html.Raw(""))>
+                        <table class="sd-table">
+                            <thead>
+                                <tr>
+                                    <th class="text-center @(Model.Wide ? "rp-fix rp-fix0" : "")">#</th>
+                                    @for (int c = 0; c < Model.Columns.Count; c++)
+                                    {
+                                        <th class="sortable text-nowrap @(numeric(Model.Columns[c].Kind) ? "text-end" : "") @(Model.Wide && c == 0 ? "rp-fix rp-fix1" : "")" data-sort="c@(c)">@Model.Columns[c].Header<i class="fas fa-sort arr"></i></th>
+                                    }
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @for (int i = 0; i < Model.Rows.Count; i++)
+                                {
+                                    var row = Model.Rows[i];
+                                    var cells = Model.Columns.Select(col => { row.TryGetValue(col.Key, out var v); return v; }).ToList();
+                                    string search = string.Join(" ", cells.Select((v, k) => text(v, Model.Columns[k].Kind))).ToLowerInvariant();
+                                    string keys = string.Join(" ", cells.Select((v, c) => $"data-k-c{c}=\"{System.Text.Encodings.Web.HtmlEncoder.Default.Encode(sortKey(v))}\""));
+                                    <tr data-search="@search" data-i="@i" @Html.Raw(keys)>
+                                        <td class="text-center text-muted @(Model.Wide ? "rp-fix rp-fix0" : "")" data-label="#"><div class="sd-cell">@(i + 1)</div></td>
+                                        @for (int c = 0; c < cells.Count; c++)
+                                        {
+                                            var col = Model.Columns[c];
+                                            string t = text(cells[c], col.Kind);
+                                            <td data-label="@col.Header" class="@(col.Kind is "date" or "day" ? "text-nowrap" : "") @(numeric(col.Kind) ? "text-end" : "") @(Model.Wide && c == 0 ? "rp-fix rp-fix1" : "")"><div class="sd-cell">@(t.Length == 0 ? "-" : t)</div></td>
+                                        }
+                                    </tr>
+                                }
+                            </tbody>
+                            @if (totals)
+                            {
+                                <tfoot>
+                                    <tr class="fw-bold">
+                                        <td class="text-center @(Model.Wide ? "rp-fix rp-fix0" : "")" data-label="#">&Sigma;</td>
+                                        @for (int c = 0; c < Model.Columns.Count; c++)
+                                        {
+                                            var col = Model.Columns[c];
+                                            <td class="text-end @(Model.Wide && c == 0 ? "rp-fix rp-fix1" : "")" data-label="@col.Header">@(col.Kind == "sum" ? total(col.Key).ToString("#,0.##") : "")</td>
+                                        }
+                                    </tr>
+                                </tfoot>
+                            }
+                        </table>
+                    </div>
+                    <div class="sd-empty" data-empty="all" style="@(Model.Rows.Count == 0 ? "" : "display:none")"><i class="far fa-folder-open"></i> No data found.</div>
+                    <div class="sd-empty" data-empty="filter" style="display:none"><i class="fas fa-filter-circle-xmark"></i> No row matched your search.</div>
+                </div>
+                @if (Model.Wide && Model.Rows.Count > 0)
+                {
+                    <div class="small text-muted mt-1"><i class="fas fa-arrows-up-down-left-right me-1"></i>Scroll the table sideways and down to see every column; the header, the first column and the totals stay in place.</div>
+                }
+            }
+            else if (string.IsNullOrEmpty(Model.Message))
+            {
+                <div class="text-muted"><i class="fas fa-filter me-1"></i>Choose the filters and press Search.</div>
+            }
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            if (document.getElementById('pane-all')) SD.initList();
+            var box = document.querySelector('.rp-scroll');
+            if (box) {
+                var setFix = function () {
+                    var first = box.querySelector('thead .rp-fix0');
+                    if (first) box.style.setProperty('--rp-fix1', first.getBoundingClientRect().width + 'px');
+                };
+                setFix();
+                window.addEventListener('resize', setFix);
+            }
+        })();
+    </script>
+}

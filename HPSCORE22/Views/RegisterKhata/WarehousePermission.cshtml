@@ -1,0 +1,96 @@
+@* Views/RegisterKhata/WarehousePermission.cshtml  (old YA: Pages/RegisterKhata/WarehousePermission.aspx)
+   Gives a user his warehouse (EM_EMPLOYEE.WAREHOUSEID). The column holds ONE warehouse, so the choice is a single one
+   (YA showed check boxes but every checked warehouse overwrote the previous one - the last one won). *@
+@model AlphaCare.Models.RkPermissionPageModel
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = "Warehouse Permission";
+}
+
+<div class="sd-page" data-smart-page>
+    <div class="card shadow-sm border-0">
+        <div class="sd-head">
+            <h5 class="mb-0"><i class="fas fa-warehouse me-2"></i>Warehouse Permission</h5>
+            <span class="sd-date"><i class="far fa-calendar me-1"></i>@DateTime.Today.ToString("dddd, dd MMMM yyyy")</span>
+        </div>
+        <div class="card-body">
+            @Html.AntiForgeryToken()
+            <div class="row g-2 align-items-end mb-3">
+                <div class="col-md-5">
+                    <label for="pStaff" class="form-label fw-semibold">User Name (Staff ID) <span class="text-danger">*</span></label>
+                    <input type="text" id="pStaff" class="form-control" list="dlEmp" placeholder="Type ID or name" autocomplete="off" />
+                    <datalist id="dlEmp"></datalist>
+                    <div class="small text-muted mt-1" id="pInfo"></div>
+                </div>
+                <div class="col-md-auto">
+                    <button type="button" class="btn btn-primary" id="btnSave" disabled><i class="fas fa-floppy-disk me-1"></i>Save</button>
+                </div>
+            </div>
+
+            <div class="sd-wrap table-responsive" style="max-height:60vh;overflow:auto">
+                <table class="sd-table">
+                    <thead><tr><th>Warehouse Name</th><th class="text-center" style="width:110px">Select</th></tr></thead>
+                    <tbody>
+                        @foreach (var w in Model.Warehouses)
+                        {
+                            <tr>
+                                <td data-label="Warehouse Name"><div class="sd-cell"><label for="w@(w.ID)" class="mb-0">@w.NAME</label></div></td>
+                                <td class="text-center" data-label="Select"><div class="sd-cell"><input class="form-check-input" type="radio" name="wh" id="w@(w.ID)" value="@w.ID" disabled /></div></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            @if (Model.Warehouses.Count == 0)
+            {
+                <div class="sd-empty"><i class="far fa-folder-open"></i> No warehouse in RK_WAREHOUSE.</div>
+            }
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            var byId = function (id) { return document.getElementById(id); };
+            var U = { search: '@Url.Action("SearchEmployee", "RegisterKhata")', staff: '@Url.Action("StaffWarehouse", "RegisterKhata")', save: '@Url.Action("SaveWarehousePermission", "RegisterKhata")' };
+            var current = null;
+            var radios = function () { return document.querySelectorAll('input[name="wh"]'); };
+            function setEnabled(on) { radios().forEach(function (r) { r.disabled = !on; if (!on) r.checked = false; }); byId('btnSave').disabled = !on; }
+
+            // old AutoCompleteExtender (SearchStaffId)
+            var t = null;
+            byId('pStaff').addEventListener('input', function () {
+                clearTimeout(t); var q = this.value.trim(); if (q.length < 2) return;
+                t = setTimeout(function () {
+                    fetch(U.search + '?term=' + encodeURIComponent(q), { credentials: 'same-origin' }).then(function (r) { return r.json(); })
+                        .then(function (l) { byId('dlEmp').innerHTML = l.map(function (s) { return '<option value="' + SD.esc(s) + '"></option>'; }).join(''); }).catch(function () { });
+                }, 250);
+            });
+            // old tbxUserName_OnTextChanged: the user's current warehouse is ticked
+            byId('pStaff').addEventListener('change', function () {
+                current = null; setEnabled(false); byId('pInfo').textContent = '';
+                var v = this.value.trim(); if (!v) return;
+                fetch(U.staff + '?staffId=' + encodeURIComponent(v), { credentials: 'same-origin' }).then(function (r) { return r.json(); })
+                    .then(function (x) {
+                        if (!x.success) { byId('pInfo').textContent = x.message; return; }
+                        current = x.staffId; byId('pStaff').value = x.staffId;
+                        byId('pInfo').textContent = [x.name, x.center].filter(Boolean).join(' · ');
+                        setEnabled(true);
+                        if (x.warehouseId) { var r = byId('w' + x.warehouseId); if (r) r.checked = true; }
+                    }).catch(function () { byId('pInfo').textContent = 'Could not load the user.'; });
+            });
+
+            byId('btnSave').addEventListener('click', function () {
+                var sel = document.querySelector('input[name="wh"]:checked');
+                if (!current) { SD.toast('Enter User Name', true); return; }
+                if (!sel) { SD.toast('Please select at least One Warehouse !', true); return; }
+                var btn = this, html = btn.innerHTML; SD.lock(btn, 'Saving...');
+                SD.post(U.save, { staffId: current, warehouseId: sel.value }).then(function (res) {
+                    SD.toast(res.message, !res.success); btn.disabled = false; btn.innerHTML = html;
+                }).catch(function () { btn.disabled = false; btn.innerHTML = html; SD.toast('Server error. Please try again.', true); });
+            });
+        })();
+    </script>
+}

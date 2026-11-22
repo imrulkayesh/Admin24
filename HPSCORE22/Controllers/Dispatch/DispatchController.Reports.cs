@@ -32,6 +32,7 @@ namespace QCMS.Controllers
             public string? Note;
             public ReportFilters Filters;
             public bool AutoRun;
+            public bool Wide = true;                                  // scroll box in both directions (default for every report)
             public List<C> Columns = new();
             public Action<DispatchReportFilter>? Defaults;            // first opening of the page
             public Func<DispatchReportFilter, string?>? Validate;     // error text, or null
@@ -107,8 +108,8 @@ namespace QCMS.Controllers
             nameof(ReportGatePassPending) => new ReportDef
             {
                 Action = action, MenuUrl = "Dispatch/ReportGatePassPending", Title = "Gate Pass Pending", Icon = "fa-door-closed",
-                Note = "Approved more than 7 days ago and still not gate passed (active locations that are not a depot / sales office). One row per item.",
-                Filters = ReportFilters.FromOnly | ReportFilters.Location,
+                Note = "Approved more than 7 days ago and still not gate passed (active locations that are not a depot / sales office). One row per item. Created By ID shows one staff member's pending gate passes.",
+                Filters = ReportFilters.FromOnly | ReportFilters.Location | ReportFilters.CreatedBy,
                 Columns = new()
                 {
                     new("TRANSACTIONID", "Dispatch ID", "tx"), new("CREATEDATE", "Date", "date"), new("ISSUETYPENAME", "Issue Type"),
@@ -117,7 +118,7 @@ namespace QCMS.Controllers
                     new("RECEIVERUSER", "Receiver ID"), new("RECEIVERNAME", "Receiver"), new("CREATEUSER", "Created By ID"),
                     new("CREATORNAME", "Created By"), new("ITEMNAME", "Item"), new("QUANTITY", "Quantity", "num"), new("UNIT", "Unit"), new("NOTES", "Notes")
                 },
-                Query = f => _repo.ReportGatePassPending(f)
+                Query = f => _repo.ReportGatePassPending(f, FirstPart(f.Staff))
             },
             nameof(MyGatePassStatus) => new ReportDef
             {
@@ -263,7 +264,7 @@ namespace QCMS.Controllers
             var vm = new DispatchReportViewModel
             {
                 Action = def.Action, Title = def.Title, Icon = def.Icon, Note = def.Note, Filters = def.Filters, AutoRun = def.AutoRun,
-                Filter = f, Columns = def.Columns, MaxRows = Admin360.Repositories.DispatchRepository.ReportMaxRows
+                Wide = def.Wide, Filter = f, Columns = def.Columns, MaxRows = Admin360.Repositories.DispatchRepository.ReportMaxRows
             };
 
             if (searching)

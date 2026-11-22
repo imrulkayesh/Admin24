@@ -41,6 +41,7 @@ namespace AlphaCare.Models
         public string? Note { get; set; }
         public ServiceReportFilters Filters { get; set; }
         public bool AutoRun { get; set; }
+        public bool Wide { get; set; } = true;          // own scroll box (both directions), sticky header / first column / totals - all service reports
 
         public ServiceReportFilter Filter { get; set; } = new();
         public bool Searched { get; set; }

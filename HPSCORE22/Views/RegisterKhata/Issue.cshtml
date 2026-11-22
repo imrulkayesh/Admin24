@@ -1,0 +1,252 @@
+@* Views/RegisterKhata/Issue.cshtml  (old YA: Pages/RegisterKhata/Issue.aspx)
+   Issue items of the user's warehouse to a staff member. Items are collected on the page and saved together:
+   stock is checked and lowered per item, TRNO = IS + date/time + counter. "Dispatch Send" also sends the items to the staff
+   as a dispatch (issue type 6) - if the dispatch fails nothing is saved. Staff ID is checked in HRIS (old staffChecker). *@
+@model AlphaCare.Models.RkStorePageModel
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = "Issue";
+}
+
+<style>
+    .rk-box { border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; background: #fff; }
+    .rk-box h6 { font-weight: 700; color: #334155; margin-bottom: 12px; }
+    .rk-box h6 i { color: #4f46e5; }
+    .rk-lines { overflow: auto; max-height: 50vh; }
+    .rk-lines table { min-width: 640px; }
+    .rk-lines thead th { position: sticky; top: 0; background: #f8fafc; z-index: 1; }
+</style>
+
+<div class="container-fluid py-3" data-smart-page>
+    <div class="card shadow-sm border-0">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-right-from-bracket me-2"></i>Issue</h5>
+            <a class="btn btn-sm btn-light" href="@Url.Action("Receive", "RegisterKhata")"><i class="fas fa-right-to-bracket me-1"></i>Receive</a>
+        </div>
+
+        <div class="card-body">
+            @Html.AntiForgeryToken()
+            <div id="msg" class="alert d-none"></div>
+            @if (Model.Warehouses.Count == 0)
+            {
+                <div class="alert alert-warning py-2"><i class="fas fa-triangle-exclamation me-1"></i>You have no warehouse at this location. Ask an administrator to set it on Warehouse Permission.</div>
+            }
+
+            <div class="rk-box mb-3">
+                <h6><i class="fas fa-clipboard me-2"></i>Issue To</h6>
+                <div class="row g-2">
+                    <div class="col-md-3">
+                        <label for="hCenter" class="form-label fw-semibold">Business Center <span class="text-danger">*</span></label>
+                        <select id="hCenter" class="form-select">
+                            @foreach (var c in Model.Locations)
+                            {
+                                <option value="@c.ID" selected="@(c.ID == Model.CenterId)">@c.CENTERNAME</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="hWarehouse" class="form-label fw-semibold">Warehouse <span class="text-danger">*</span></label>
+                        <select id="hWarehouse" class="form-select">
+                            @foreach (var w in Model.Warehouses)
+                            {
+                                <option value="@w.ID" selected="@(w.ID == Model.WarehouseId)">@w.NAME</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="hDept" class="form-label fw-semibold">Department <span class="text-danger">*</span></label>
+                        <select id="hDept" class="form-select">
+                            <option value="0">Select</option>
+                            @foreach (var d in Model.Departments)
+                            {
+                                <option value="@d.ID">@d.NAME</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-3 d-flex align-items-end">
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="hDispatch" />
+                            <label class="form-check-label fw-semibold" for="hDispatch">Dispatch Send</label>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="hStaff" class="form-label fw-semibold">Staff ID <span class="text-danger">*</span></label>
+                        <input type="text" id="hStaff" class="form-control" maxlength="50" placeholder="Staff Id" />
+                        <div class="small mt-1" id="hStaffInfo"></div>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="hPurpose" class="form-label fw-semibold">Purpose <span class="text-danger">*</span></label>
+                        <input type="text" id="hPurpose" class="form-control" maxlength="500" />
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <label for="hIssueDate" class="form-label fw-semibold">Issue Date</label>
+                        <input type="text" id="hIssueDate" class="form-control" value="@DateTime.Today.ToString("dd/MM/yyyy")" readonly />
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <label for="hReturnDate" class="form-label fw-semibold">Return Date</label>
+                        <input type="date" id="hReturnDate" class="form-control" min="@DateTime.Today.ToString("yyyy-MM-dd")" />
+                    </div>
+                </div>
+                <div class="small text-muted mt-2" id="dispatchNote" style="display:none"><i class="fas fa-circle-info me-1"></i>The items go to the staff as a dispatch (your Create Dispatch draft is used; items already in it are replaced).</div>
+            </div>
+
+            <div class="rk-box mb-3">
+                <h6><i class="fas fa-list-check me-2"></i>Items</h6>
+                <div class="row g-2 align-items-end mb-2">
+                    <div class="col-md-3">
+                        <label for="iItem" class="form-label fw-semibold">Item Name <span class="text-danger">*</span></label>
+                        <select id="iItem" class="form-select">
+                            <option value="0">Select</option>
+                            @foreach (var i in Model.Items)
+                            {
+                                <option value="@i.ID">@i.NAME</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-6 col-md-2">
+                        <label for="iCode" class="form-label fw-semibold">Item Code</label>
+                        <input type="text" id="iCode" class="form-control" readonly />
+                    </div>
+                    <div class="col-6 col-md-1">
+                        <label for="iUnit" class="form-label fw-semibold">Unit</label>
+                        <input type="text" id="iUnit" class="form-control" readonly />
+                    </div>
+                    <div class="col-6 col-md-1">
+                        <label for="iAvail" class="form-label fw-semibold">Available</label>
+                        <input type="text" id="iAvail" class="form-control" readonly />
+                    </div>
+                    <div class="col-6 col-md-1">
+                        <label for="iQty" class="form-label fw-semibold">Qty <span class="text-danger">*</span></label>
+                        <input type="text" id="iQty" class="form-control" inputmode="decimal" disabled />
+                    </div>
+                    <div class="col-md-3">
+                        <label for="iRemarks" class="form-label fw-semibold">Remarks</label>
+                        <input type="text" id="iRemarks" class="form-control" maxlength="500" />
+                    </div>
+                    <div class="col-md-1">
+                        <button type="button" class="btn btn-success w-100" id="btnAdd" title="Add"><i class="fas fa-plus"></i></button>
+                    </div>
+                </div>
+                <div class="rk-lines">
+                    <table class="table table-sm mb-0">
+                        <thead class="table-light"><tr><th>#</th><th>Item Name</th><th>Item Code</th><th>Unit</th><th class="text-end">Qty</th><th>Remarks</th><th class="text-center">Action</th></tr></thead>
+                        <tbody id="lineRows"></tbody>
+                    </table>
+                    <div class="text-muted small py-2" id="noLines">No item added.</div>
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-success" id="btnSave" disabled="@(Model.WarehouseId == 0)"><i class="fas fa-floppy-disk me-1"></i>Save</button>
+                <a class="btn btn-outline-secondary" href="@Url.Action("Issue", "RegisterKhata")"><i class="fas fa-rotate me-1"></i>Reset</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            var byId = function (id) { return document.getElementById(id); };
+            var J = window.jQuery, esc = SD.esc;
+            var U = {
+                page: '@Url.Action("Issue", "RegisterKhata")', lookups: '@Url.Action("WarehouseLookups", "RegisterKhata")',
+                info: '@Url.Action("ItemInfo", "RegisterKhata")', hris: '@Url.Action("HrisStaff", "RegisterKhata")', save: '@Url.Action("SaveIssue", "RegisterKhata")'
+            };
+            var lines = [];          // { itemId, name, code, unit, qty, remarks }
+            function on(el, fn) { if (J) J(el).on('change', fn); else el.addEventListener('change', fn); }
+            function fill(sel, list, first) { sel.innerHTML = first; list.forEach(function (o) { sel.add(new Option(o.name, o.id)); }); if (J) J(sel).trigger('change.select2'); }
+            function getJson(url) { return fetch(url, { credentials: 'same-origin' }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }); }
+            function msg(text, ok) { var m = byId('msg'); m.className = 'alert ' + (ok ? 'alert-success' : 'alert-danger'); m.textContent = text; window.scrollTo({ top: 0, behavior: 'smooth' }); }
+            function clearItem() { ['iCode', 'iUnit', 'iAvail', 'iQty', 'iRemarks'].forEach(function (f) { byId(f).value = ''; }); byId('iQty').disabled = true; }
+
+            // old ddlBusinessCenter AutoPostBack -> warehouses of the user at that location
+            on(byId('hCenter'), function () { location.href = U.page + '?centerId=' + encodeURIComponent(byId('hCenter').value); });
+            // old ddlWarehouse AutoPostBack -> departments + items (items already added belong to the old warehouse: start again)
+            on(byId('hWarehouse'), function () {
+                lines = []; draw(); clearItem();
+                getJson(U.lookups + '?warehouseId=' + encodeURIComponent(byId('hWarehouse').value)).then(function (x) {
+                    fill(byId('hDept'), x.departments, '<option value="0">Select</option>');
+                    fill(byId('iItem'), x.items, '<option value="0">Select</option>');
+                }).catch(function () { SD.toast('Could not load the warehouse lists.', true); });
+            });
+            byId('hDispatch').addEventListener('change', function () { byId('dispatchNote').style.display = this.checked ? '' : 'none'; });
+
+            // old findStaff(): HRIS staff check
+            byId('hStaff').addEventListener('change', function () {
+                var v = this.value.trim(), info = byId('hStaffInfo');
+                info.className = 'small mt-1 text-muted'; info.textContent = '';
+                if (!v) return;
+                info.textContent = 'Checking HRIS...';
+                getJson(U.hris + '?staffId=' + encodeURIComponent(v)).then(function (r) {
+                    if (r.status === 1) {
+                        info.className = 'small mt-1 text-success';
+                        info.textContent = 'User Found in HRIS: ' + [r.name, r.designation, r.contact, r.email].filter(Boolean).join(' · ');
+                    } else if (r.status === 3) {
+                        info.className = 'small mt-1 text-danger'; info.textContent = 'Staff Id is empty.';
+                    } else {
+                        info.className = 'small mt-1 text-danger'; info.textContent = 'User Not Found in HRIS';
+                    }
+                }).catch(function () { info.className = 'small mt-1 text-danger'; info.textContent = 'HRIS could not be reached.'; });
+            });
+
+            // old ddlItemName_OnSelectedIndexChanged + LoadItemstock
+            on(byId('iItem'), function () {
+                clearItem();
+                var item = byId('iItem').value; if (item === '0') return;
+                getJson(U.info + '?itemId=' + encodeURIComponent(item) + '&warehouseId=' + encodeURIComponent(byId('hWarehouse').value)).then(function (x) {
+                    if (!x.found) return;
+                    byId('iCode').value = x.itemCode || ''; byId('iUnit').value = x.unitName || '';
+                    byId('iAvail').value = (x.available === null || x.available === undefined) ? '' : x.available;
+                    byId('iQty').disabled = false; byId('iQty').focus();
+                }).catch(function () { SD.toast('Could not load the item.', true); });
+            });
+
+            function draw() {
+                byId('noLines').style.display = lines.length ? 'none' : '';
+                byId('lineRows').innerHTML = lines.map(function (l, i) {
+                    return '<tr data-i="' + i + '"><td>' + (i + 1) + '</td><td>' + esc(l.name) + '</td><td>' + esc(l.code) + '</td><td>' + esc(l.unit) +
+                        '</td><td class="text-end">' + esc(l.qty) + '</td><td>' + esc(l.remarks) +
+                        '</td><td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" title="Delete"><i class="fas fa-trash"></i></button></td></tr>';
+                }).join('');
+            }
+            draw();
+
+            // old btnAdd2_Click
+            byId('btnAdd').addEventListener('click', function () {
+                var sel = byId('iItem'), item = sel.value, qty = byId('iQty').value.trim();
+                if (item === '0') { SD.toast('Select Item Name', true); return; }
+                if (byId('iAvail').value === '') { SD.toast('This item has no stock in the warehouse.', true); return; }
+                if (!/^(\d*\.)?\d+$/.test(qty) || parseFloat(qty) <= 0) { SD.toast('Enter a valid quantity.', true); byId('iQty').focus(); return; }
+                if (lines.some(function (l) { return l.itemId === item; })) { SD.toast(sel.options[sel.selectedIndex].text + ' is already added.', true); return; }
+                lines.push({ itemId: item, name: sel.options[sel.selectedIndex].text, code: byId('iCode').value, unit: byId('iUnit').value, qty: qty, remarks: byId('iRemarks').value.trim() });
+                draw(); sel.value = '0'; if (J) J(sel).trigger('change.select2'); clearItem();
+            });
+            byId('lineRows').addEventListener('click', function (e) {
+                var b = e.target.closest('button'); if (!b) return;
+                if (!confirm('Are you sure?')) return;
+                lines.splice(+b.closest('tr').dataset.i, 1); draw();
+            });
+
+            // old btnSave_OnClick
+            byId('btnSave').addEventListener('click', function () {
+                if (byId('hDept').value === '0') { msg('Select Department', false); return; }
+                if (!byId('hStaff').value.trim()) { msg('Enter Staff', false); return; }
+                if (!byId('hPurpose').value.trim()) { msg('Enter Purpose', false); return; }
+                if (!lines.length) { msg('Please add item first.', false); return; }
+                var data = {
+                    LocationId: byId('hCenter').value, WarehouseId: byId('hWarehouse').value, DepartmentId: byId('hDept').value,
+                    StaffId: byId('hStaff').value.trim(), Purpose: byId('hPurpose').value.trim(), ReturnDate: byId('hReturnDate').value,
+                    Dispatch: byId('hDispatch').checked
+                };
+                lines.forEach(function (l, i) { data['Lines[' + i + '].ItemId'] = l.itemId; data['Lines[' + i + '].Qty'] = l.qty; data['Lines[' + i + '].Remarks'] = l.remarks; });
+                var btn = this, html = btn.innerHTML; SD.lock(btn, 'Saving...');
+                SD.post(U.save, data).then(function (res) {
+                    if (res.success) { msg(res.message, true); setTimeout(function () { location.href = U.page + '?centerId=' + encodeURIComponent(byId('hCenter').value) + '&warehouseId=' + encodeURIComponent(byId('hWarehouse').value); }, 1800); }
+                    else { msg(res.message, false); btn.disabled = false; btn.innerHTML = html; }
+                }).catch(function () { msg('Save Fail. Please try again.', false); btn.disabled = false; btn.innerHTML = html; });
+            });
+        })();
+    </script>
+}

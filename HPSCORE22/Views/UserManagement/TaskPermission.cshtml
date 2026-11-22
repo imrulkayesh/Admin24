@@ -82,8 +82,15 @@
     <script>
         (function () {
             var byId = function (id) { return document.getElementById(id); };
-            byId('fRole').addEventListener('change', function () {
-                location.href = '@Url.Action("TaskPermission", "UserManagement")?roleId=' + byId('fRole').value;
+            var loadedRole = '@Model.RoleId';            // the role whose tree is on the page (what Save writes)
+            // the Role drop down is a Select2 (app-standard.js): it reports a pick with jQuery .trigger('change'),
+            // which a plain addEventListener does not receive -> picking a role never loaded its tree and Save stayed
+            // disabled. jQuery .on() receives both the Select2 event and a native change.
+            var onChange = function (el, fn) { if (window.jQuery) window.jQuery(el).on('change', fn); else el.addEventListener('change', fn); };
+            onChange(byId('fRole'), function () {
+                var v = byId('fRole').value;
+                if (v === loadedRole) return;
+                location.href = '@Url.Action("TaskPermission", "UserManagement")?roleId=' + encodeURIComponent(v);
             });
 
             // ticking a parent (group header) ticks / unticks its children, like the old TreeView
@@ -110,8 +117,9 @@
 
             byId('btnSave').addEventListener('click', function (e) {
                 var btn = e.currentTarget;
-                var roleId = byId('fRole').value;
+                var roleId = loadedRole;                  // never save one role's ticks onto another role
                 if (!roleId || roleId === '0') { SD.toast('Select the Role.', true); return; }
+                if (byId('fRole').value !== roleId) { SD.toast('The selected role is not loaded yet - please wait for the page to reload.', true); return; }
                 var ids = Array.prototype.slice.call(document.querySelectorAll('.tp-chk:checked')).map(function (c) { return c.value; });
                 var data = { roleId: roleId };
                 ids.forEach(function (v, i) { data['taskIds[' + i + ']'] = v; });

@@ -47,6 +47,63 @@ namespace Admin360.Repositories
         }
         private bool Has(string table, string column) => Cols(table).Contains(column);
 
+        // NOT NULL / DEFAULT of each column + whether an enabled INSERT trigger fills values. A table copied with
+        // CREATE TABLE ... AS SELECT keeps NOT NULL but loses DEFAULT values and triggers, so an insert that leaves
+        // out ID / CREATEDATE dies with ORA-01400 (the Task Permission save bug). Read once per table and cached.
+        private sealed record ColumnRule(bool Nullable, bool HasDefault);
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (Dictionary<string, ColumnRule> Cols, bool InsertTrigger)> _tableRules = new();
+        private (Dictionary<string, ColumnRule> Cols, bool InsertTrigger) Rules(string table)
+        {
+            return _tableRules.GetOrAdd(table.ToUpperInvariant(), t =>
+            {
+                using var conn = _databaseService.GetConnection();
+                const string own = "SELECT COLUMN_NAME, NULLABLE, DEFAULT_LENGTH FROM USER_TAB_COLUMNS WHERE TABLE_NAME = :T";
+                const string all = "SELECT COLUMN_NAME, NULLABLE, DEFAULT_LENGTH FROM ALL_TAB_COLUMNS WHERE TABLE_NAME = :T";
+                var rows = conn.Query(own, new { T = t }).ToList();
+                if (rows.Count == 0) rows = conn.Query(all, new { T = t }).ToList();
+                var cols = new Dictionary<string, ColumnRule>(StringComparer.OrdinalIgnoreCase);
+                foreach (var r in rows)
+                {
+                    var d = (IDictionary<string, object?>)r;
+                    string name = Convert.ToString(d["COLUMN_NAME"]) ?? "";
+                    if (name.Length == 0 || cols.ContainsKey(name)) continue;
+                    cols[name] = new ColumnRule(Convert.ToString(d["NULLABLE"]) != "N",
+                                                d["DEFAULT_LENGTH"] != null && Convert.ToDecimal(d["DEFAULT_LENGTH"]) > 0);
+                }
+                bool trigger = conn.ExecuteScalar<int>(@"SELECT COUNT(1) FROM ALL_TRIGGERS
+                                                          WHERE TABLE_NAME = :T AND STATUS = 'ENABLED' AND TRIGGERING_EVENT LIKE '%INSERT%'",
+                                                       new { T = t }) > 0;
+                return (cols, trigger);
+            });
+        }
+
+        // the column exists and nothing fills it on insert (no DEFAULT) -> the statement must give a value
+        private bool NeedsValue(string table, string column) =>
+            Rules(table).Cols.TryGetValue(column, out var c) && !c.HasDefault;
+
+        // ID must be supplied by the statement: NOT NULL, no DEFAULT and no INSERT trigger that fills it
+        private bool NeedsGeneratedId(string table) =>
+            Rules(table).Cols.TryGetValue("ID", out var c) && !c.Nullable && !c.HasDefault && !Rules(table).InsertTrigger;
+
+        // audit columns of an INSERT / UPDATE, only the ones the table really has (":By" = the logged in staff id)
+        private string AuditInsertCols(string table) =>
+            (Has(table, "CREATEDBY") ? ", CREATEDBY" : "") + (NeedsValue(table, "CREATEDATE") ? ", CREATEDATE" : "");
+        private string AuditInsertVals(string table) =>
+            (Has(table, "CREATEDBY") ? ", :By" : "") + (NeedsValue(table, "CREATEDATE") ? ", SYSDATE" : "");
+        private string AuditUpdate(string table) =>
+            (Has(table, "UPDATEDBY") ? ", UPDATEDBY = :By" : "") + (Has(table, "UPDATEDATE") ? ", UPDATEDATE = SYSDATE" : "");
+
+        // a NOT NULL column without DEFAULT that the statement does not fill -> say which one (shown on the page)
+        private void EnsureCovered(string table, IEnumerable<string> givenColumns)
+        {
+            var rules = Rules(table);
+            if (rules.InsertTrigger) return;     // a trigger may fill it - let Oracle decide
+            var given = new HashSet<string>(givenColumns.Select(c => c.Trim()), StringComparer.OrdinalIgnoreCase);
+            var missing = rules.Cols.Where(c => !c.Value.Nullable && !c.Value.HasDefault && !given.Contains(c.Key)).Select(c => c.Key).ToList();
+            if (missing.Count > 0)
+                throw new InvalidOperationException($"{table} needs a value for {string.Join(", ", missing)} (NOT NULL without default).");
+        }
+
         // old Encryption.EncryptionWithSh: SHA1 over ASCII bytes, lower case hex (UC_USERS.PASSWORD format)
         internal static string Sha1Hex(string text)
         {
@@ -179,26 +236,39 @@ namespace Admin360.Repositories
         public void CreateUser(SaveUserRequest r, string byStaffId)
         {
             string staffId = (r.StaffId ?? "").Trim();
+            const string U = "UC_USERS";
+            const string E = "EM_EMPLOYEE";
+
+            // UC_USERS: optional columns only when the table has them (an unknown column = ORA-00904, the whole save failed)
+            string uCols = "ID, USERNAME, PASSWORD, ROLEID"
+                         + (Has(U, "DEPARTMENTID") ? ", DEPARTMENTID" : "")
+                         + (NeedsValue(U, "ISACTIVE") ? ", ISACTIVE" : "")
+                         + AuditInsertCols(U);
+            string uVals = ":Id, :Id, :Pwd, :RoleId"
+                         + (Has(U, "DEPARTMENTID") ? ", :DeptId" : "")
+                         + (NeedsValue(U, "ISACTIVE") ? ", 1" : "")
+                         + AuditInsertVals(U);
+            EnsureCovered(U, uCols.Split(','));
+
+            string eCols = "ID, STAFFID, USERID, DESIGNATIONID, EMPLOYEENAME, OFFICEMOBILE, OFFICEMAIL, BUSINESSCENTERID, COMPANYID, DEPARTMENTID"
+                         + AuditInsertCols(E);
+            string eVals = "SQ_EM_EMPLOYEE.NEXTVAL, :Id, :Id, :DesignationId, :Name, :Mobile, :Email, :CenterId, :CompanyId, :DepartmentId"
+                         + AuditInsertVals(E);
+
             using var conn = _databaseService.GetConnection();
             conn.Open();
             using var tx = conn.BeginTransaction();
 
-            conn.Execute(@"INSERT INTO UC_USERS (ID, USERNAME, PASSWORD, ROLEID, DEPARTMENTID, CREATEDBY)
-                           VALUES (:Id, :Id, :Pwd, :RoleId, :DeptId, :By)",
+            conn.Execute($"INSERT INTO UC_USERS ({uCols}) VALUES ({uVals})",
                          new { Id = staffId, Pwd = Sha1Hex(staffId), r.RoleId, DeptId = r.DepartmentId, By = byStaffId }, tx);
 
             int updated = UpdateEmployee(conn, tx, r, staffId, byStaffId);
             if (updated == 0)
-                conn.Execute(@"INSERT INTO EM_EMPLOYEE (ID, STAFFID, USERID, DESIGNATIONID, EMPLOYEENAME, OFFICEMOBILE,
-                                                        OFFICEMAIL, BUSINESSCENTERID, COMPANYID, DEPARTMENTID, CREATEDBY)
-                               VALUES (SQ_EM_EMPLOYEE.NEXTVAL, :Id, :Id, :DesignationId, :Name, :Mobile, :Email,
-                                       :CenterId, :CompanyId, :DepartmentId, :By)",
+                conn.Execute($"INSERT INTO EM_EMPLOYEE ({eCols}) VALUES ({eVals})",
                              new { Id = staffId, r.DesignationId, r.Name, r.Mobile, r.Email, r.CenterId, r.CompanyId, r.DepartmentId, By = byStaffId }, tx);
 
             InsertApproverIfNeeded(conn, tx, r, staffId, byStaffId);
-
-            conn.Execute(@"INSERT INTO UC_USERROLE (STAFFID, ROLEID, ACTIVE, CREATEDBY) VALUES (:Id, :RoleId, 1, :By)",
-                         new { Id = staffId, r.RoleId, By = byStaffId }, tx);
+            InsertUserRole(conn, tx, staffId, r.RoleId, byStaffId);
             tx.Commit();
         }
 
@@ -206,15 +276,21 @@ namespace Admin360.Repositories
         public void UpdateUser(SaveUserRequest r, string byStaffId)
         {
             string staffId = (r.StaffId ?? "").Trim();
+            const string U = "UC_USERS";
+            const string R = "UC_USERROLE";
+
+            string setSql = "ROLEID = :RoleId"
+                       + (Has(U, "DEPARTMENTID") ? ", DEPARTMENTID = :DeptId" : "")
+                       + AuditUpdate(U)
+                       + (string.IsNullOrEmpty(r.Password) ? "" : ", PASSWORD = :Pwd");
+
             using var conn = _databaseService.GetConnection();
             conn.Open();
             using var tx = conn.BeginTransaction();
 
-            string sql = @"UPDATE UC_USERS SET ROLEID = :RoleId, DEPARTMENTID = :DeptId,
-                                  UPDATEDBY = :By, UPDATEDATE = SYSDATE"
-                       + (string.IsNullOrEmpty(r.Password) ? "" : ", PASSWORD = :Pwd")
-                       + " WHERE ID = :Id";
-            conn.Execute(sql, new { r.RoleId, DeptId = r.DepartmentId, By = byStaffId, Pwd = Sha1Hex(r.Password ?? ""), Id = staffId }, tx);
+            int changed = conn.Execute($"UPDATE UC_USERS SET {setSql} WHERE ID = :Id",
+                                       new { r.RoleId, DeptId = r.DepartmentId, By = byStaffId, Pwd = Sha1Hex(r.Password ?? ""), Id = staffId }, tx);
+            if (changed == 0) throw new InvalidOperationException("UC_USERS has no row with ID " + staffId + ".");
 
             UpdateEmployee(conn, tx, r, staffId, byStaffId);
             InsertApproverIfNeeded(conn, tx, r, staffId, byStaffId);
@@ -223,22 +299,36 @@ namespace Admin360.Repositories
             int have = conn.ExecuteScalar<int>("SELECT COUNT(1) FROM UC_USERROLE WHERE STAFFID = :Id AND ROLEID = :RoleId",
                                                new { Id = staffId, r.RoleId }, tx);
             if (have == 0)
-                conn.Execute("INSERT INTO UC_USERROLE (STAFFID, ROLEID, ACTIVE, CREATEDBY) VALUES (:Id, :RoleId, 1, :By)",
-                             new { Id = staffId, r.RoleId, By = byStaffId }, tx);
+                InsertUserRole(conn, tx, staffId, r.RoleId, byStaffId);
             else
-                conn.Execute("UPDATE UC_USERROLE SET ACTIVE = 1, UPDATEDBY = :By, UPDATEDATE = SYSDATE WHERE STAFFID = :Id AND ROLEID = :RoleId",
-                             new { By = byStaffId, Id = staffId, r.RoleId }, tx);
+            {
+                string roleSet = ((Has(R, "ACTIVE") ? ", ACTIVE = 1" : "") + AuditUpdate(R)).TrimStart(',', ' ');
+                if (roleSet.Length > 0)
+                    conn.Execute($"UPDATE UC_USERROLE SET {roleSet} WHERE STAFFID = :Id AND ROLEID = :RoleId",
+                                 new { By = byStaffId, Id = staffId, r.RoleId }, tx);
+            }
             tx.Commit();
         }
 
-        private static int UpdateEmployee(Oracle.ManagedDataAccess.Client.OracleConnection conn, System.Data.IDbTransaction tx,
-                                          SaveUserRequest r, string staffId, string byStaffId)
+        // one UC_USERROLE row (User Setup create / edit). ID only when the table needs it and nothing fills it.
+        private void InsertUserRole(Oracle.ManagedDataAccess.Client.OracleConnection conn, System.Data.IDbTransaction tx,
+                                    string staffId, int roleId, string byStaffId)
+        {
+            const string R = "UC_USERROLE";
+            bool id = NeedsGeneratedId(R);
+            string cols = (id ? "ID, " : "") + "STAFFID, ROLEID" + (Has(R, "ACTIVE") ? ", ACTIVE" : "") + AuditInsertCols(R);
+            string vals = (id ? "(SELECT NVL(MAX(ID),0)+1 FROM UC_USERROLE), " : "") + ":Id, :RoleId" + (Has(R, "ACTIVE") ? ", 1" : "") + AuditInsertVals(R);
+            EnsureCovered(R, cols.Split(','));
+            conn.Execute($"INSERT INTO UC_USERROLE ({cols}) VALUES ({vals})", new { Id = staffId, RoleId = roleId, By = byStaffId }, tx);
+        }
+
+        private int UpdateEmployee(Oracle.ManagedDataAccess.Client.OracleConnection conn, System.Data.IDbTransaction tx,
+                                   SaveUserRequest r, string staffId, string byStaffId)
         {
             // old dalEmployee.Update minus the ID reassignment
             return conn.Execute(@"UPDATE EM_EMPLOYEE SET DESIGNATIONID = :DesignationId, EMPLOYEENAME = :Name,
                                          OFFICEMOBILE = :Mobile, OFFICEMAIL = :Email, BUSINESSCENTERID = :CenterId,
-                                         COMPANYID = :CompanyId, DEPARTMENTID = :DepartmentId,
-                                         UPDATEDBY = :By, UPDATEDATE = SYSDATE
+                                         COMPANYID = :CompanyId, DEPARTMENTID = :DepartmentId" + AuditUpdate("EM_EMPLOYEE") + @"
                                    WHERE STAFFID = :Id",
                                 new { r.DesignationId, r.Name, r.Mobile, r.Email, r.CenterId, r.CompanyId, r.DepartmentId, By = byStaffId, Id = staffId }, tx);
         }
@@ -502,21 +592,30 @@ namespace Admin360.Repositories
             return tree;
         }
 
-        // old btnSave_Click: wipe the role's permissions and insert the checked tasks
+        // old btnSave_Click: wipe the role's permissions and insert the checked tasks.
+        // UC_TASKPERMISSION_COPY is a copy of YA's UC_TASKPERMISSION: its ID (and CREATEDATE / ISACTIVE) kept NOT NULL
+        // but lost the sequence / default, so the insert must give them - like every other _COPY insert here (MAX(ID)+1).
         public void SaveTaskPermissions(int roleId, List<int> taskIds, string byStaffId)
         {
-            bool audit = Has("UC_TASKPERMISSION_COPY", "CREATEDBY");
-            string insert = audit
-                ? "INSERT INTO UC_TASKPERMISSION_COPY (TASKID, ROLEID, CREATEDBY) VALUES (:TaskId, :RoleId, :By)"
-                : "INSERT INTO UC_TASKPERMISSION_COPY (TASKID, ROLEID) VALUES (:TaskId, :RoleId)";
+            const string T = "UC_TASKPERMISSION_COPY";
+            bool id = Has(T, "ID");
+            string cols = (id ? "ID, " : "") + "TASKID, ROLEID"
+                        + (NeedsValue(T, "ISACTIVE") ? ", ISACTIVE" : "")
+                        + (NeedsValue(T, "ACTIVE") ? ", ACTIVE" : "")
+                        + AuditInsertCols(T);
+            string vals = (id ? "(SELECT NVL(MAX(ID),0)+1 FROM UC_TASKPERMISSION_COPY), " : "") + ":TaskId, :RoleId"
+                        + (NeedsValue(T, "ISACTIVE") ? ", 1" : "")
+                        + (NeedsValue(T, "ACTIVE") ? ", 1" : "")
+                        + AuditInsertVals(T);
+            EnsureCovered(T, cols.Split(','));
+            string insert = $"INSERT INTO UC_TASKPERMISSION_COPY ({cols}) VALUES ({vals})";
+
             using var conn = _databaseService.GetConnection();
             conn.Open();
             using var tx = conn.BeginTransaction();
             conn.Execute("DELETE FROM UC_TASKPERMISSION_COPY WHERE ROLEID = :RoleId", new { RoleId = roleId }, tx);
             foreach (int taskId in taskIds.Distinct())
-                conn.Execute(insert,
-                             audit ? new { TaskId = taskId, RoleId = roleId, By = byStaffId }
-                                   : (object)new { TaskId = taskId, RoleId = roleId }, tx);
+                conn.Execute(insert, new { TaskId = taskId, RoleId = roleId, By = byStaffId }, tx);
             tx.Commit();
         }
     }

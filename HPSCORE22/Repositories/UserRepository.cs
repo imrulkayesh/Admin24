@@ -89,6 +89,54 @@ namespace QCMS.Repositories
             return conn.ExecuteScalar<int>(sql, new { Username = username }) > 0;
         }
 
+        // First day the Dispatch Gate Check rule counts from (the TO_DATE('05/10/2026', 'DD/MM/YYYY') of the gate check query)
+        private static readonly DateTime GateCheckFromDate = new DateTime(2026, 10, 5);
+
+        /// <summary>
+        /// The pending Dispatch Gate Check records of a staff (D.CREATEDBY): approved dispatches (STATUSID 2) without gate pass,
+        /// sent from an active location that is not a depot / sales office. Shown on the login page when the account is
+        /// inactive for this reason. Same query as "Gate check Pending Query", with bind parameters. Oldest first.
+        /// </summary>
+        public List<PendingGateCheckModel> GetPendingGateCheckDispatches(string staffId)
+        {
+            using var conn = _databaseService.GetConnection();
+
+            const string sql = @"
+        SELECT SB.CENTERNAME AS SENDER_LOCATION,
+               D.FROMUSER AS SENDER_USER,
+               SE.EMPLOYEENAME AS SENDER_NAME,
+               RB.CENTERNAME AS RECEIVER_LOCATION,
+               D.TOUSER AS RECEIVER_USER,
+               RE.EMPLOYEENAME AS RECEIVER_NAME,
+               D.CREATEDBY AS CREAT_USER,
+               E.EMPLOYEENAME AS CREATOR_NAME,
+               D.CREATEDATE,
+               D.TRANSACTIONID,
+               I.ISSUETYPENAME
+          FROM DP_DISPATCH D
+               LEFT JOIN UC_USERS U ON D.CREATEDBY = U.USERNAME
+               LEFT JOIN EM_EMPLOYEE E ON D.CREATEDBY = E.STAFFID
+               LEFT JOIN EM_EMPLOYEE SE ON D.FROMUSER = SE.STAFFID
+               LEFT JOIN EM_EMPLOYEE RE ON D.TOUSER = RE.STAFFID
+               LEFT JOIN BS_BUSINESSCENTER B ON B.ID = E.BUSINESSCENTERID
+               LEFT JOIN BS_DEPARTMENT SDEP ON SDEP.ID = D.SENDDEPARTMENTID
+               LEFT JOIN BS_DEPARTMENT RDEP ON RDEP.ID = D.RECDEPARTMENTID
+               LEFT JOIN DP_STATUS S ON D.STATUSID = S.ID
+               LEFT JOIN DP_ISSUETYPE I ON D.ISSUETYPEID = I.ID
+               LEFT JOIN BS_BUSINESSCENTER SB ON D.SENDBUSINESSCENTERID = SB.ID
+               LEFT JOIN BS_BUSINESSCENTER RB ON D.RECBUSINESSCENTERID = RB.ID
+         WHERE D.CREATEDATE < SYSDATE
+           AND D.STATUSID IN (2)
+           AND TRUNC(D.CREATEDATE) >= :FromDate
+           AND D.GATEPASS = 0
+           AND SB.ISDEPOTORSALESOFFICE = 0
+           AND SB.LOCATIONSTATUS = 1
+           AND D.CREATEDBY = :StaffId
+         ORDER BY D.CREATEDATE";
+
+            return conn.Query<PendingGateCheckModel>(sql, new { FromDate = GateCheckFromDate, StaffId = (staffId ?? "").Trim() }).ToList();
+        }
+
         public DataTable GetEmployeeInfo(string userId)
         {
             using var conn = _databaseService.GetConnection();

@@ -33,6 +33,31 @@ namespace AlphaCare.Controllers
             _logger = logger;
         }
 
+        // Pending Dispatch Gate Check records of the staff (D.CREATEDBY = the HRIS user id typed on the login page = staff id).
+        // A failure here must not hide the inactive message, so it is logged and an empty list is returned.
+        private List<object> PendingGateChecks(string staffId)
+        {
+            try
+            {
+                return _userRepository.GetPendingGateCheckDispatches(staffId)
+                    .Where(p => !string.IsNullOrWhiteSpace(p.TRANSACTIONID))
+                    .Select(p => (object)new
+                    {
+                        transactionId = p.TRANSACTIONID,
+                        date = p.CREATEDATE?.ToString("dd/MM/yyyy"),
+                        issueType = p.ISSUETYPENAME,
+                        receiver = p.RECEIVER_NAME,
+                        receiverLocation = p.RECEIVER_LOCATION
+                    })
+                    .ToList();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Pending dispatch gate check lookup failed for {StaffId}", staffId);
+                return new List<object>();
+            }
+        }
+
         // =========================
         // LOGIN VIEW
         // =========================
@@ -78,7 +103,12 @@ namespace AlphaCare.Controllers
                     if (_userRepository.IsInactiveForDispatchGate(Username))
                     {
                         _loginLog.LogFailure(Username, "Inactive - Dispatch Gate check pending", ip, device, ua);
-                        return Json(new { success = false, message = "Your User ID is inactive because the Dispatch Gate check is pending." });
+                        return Json(new
+                        {
+                            success = false,
+                            message = "Your User ID is inactive because the Dispatch Gate check is pending.",
+                            pendingDispatches = PendingGateChecks(Username)      // the dispatches still waiting for the gate check
+                        });
                     }
 
                     _loginLog.LogFailure(Username, "Invalid username or password", ip, device, ua);

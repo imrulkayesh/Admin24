@@ -1,0 +1,191 @@
+@* Views/RegisterKhata/VehicleInOut.cshtml  (old YA: Pages/RegisterKhata/VehicleInOut.aspx)
+   Register of a location: add / edit (delete was switched off in YA). Changing the location reloads its list (old AutoPostBack);
+   while an entry is being edited the location only changes the entry. Standard look: app-standard.css / app-standard.js. *@
+@model AlphaCare.Models.RkRegisterPageModel
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = "Vehicle In / Out";
+}
+
+<div class="sd-page" data-smart-page>
+    <div class="card shadow-sm border-0">
+        <div class="sd-head">
+            <h5 class="mb-0"><i class="fas fa-truck me-2"></i>Vehicle In / Out</h5>
+            <span class="sd-date"><i class="far fa-calendar me-1"></i>@DateTime.Today.ToString("dddd, dd MMMM yyyy")</span>
+        </div>
+
+        <div class="card-body">
+            @Html.AntiForgeryToken()
+
+            <form id="fm" class="row g-2 mb-3" autocomplete="off">
+                <input type="hidden" id="fId" value="0" />
+                    <div class="col-md-3">
+                        <label for="fLocation" class="form-label fw-semibold">Location <span class="text-danger">*</span></label>
+                        <select id="fLocation" class="form-select">
+                            @foreach (var c in Model.Locations)
+                            {
+                                <option value="@c.ID" selected="@(c.ID == Model.LocationId)">@c.CENTERNAME</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="f_vehicleNo" class="form-label fw-semibold">Vehicle No <span class="text-danger">*</span></label>
+                        <input type="text" id="f_vehicleNo" class="form-control" maxlength="50" />
+                    </div>
+                    <div class="col-md-3">
+                        <label for="f_gateNo" class="form-label fw-semibold">Gate No <span class="text-danger">*</span></label>
+                        <input type="text" id="f_gateNo" class="form-control" maxlength="50" />
+                    </div>
+                    <div class="col-md-3">
+                        <label for="f_driverName" class="form-label fw-semibold">Driver Name <span class="text-danger">*</span></label>
+                        <input type="text" id="f_driverName" class="form-control" maxlength="200" />
+                    </div>
+                    <div class="col-md-3">
+                        <label for="f_driverMobile" class="form-label fw-semibold">Driver Mobile <span class="text-danger">*</span></label>
+                        <input type="text" id="f_driverMobile" class="form-control" inputmode="numeric" maxlength="20" oninput="this.value=this.value.replace(/[^0-9]/g,'')" />
+                    </div>
+                    <div class="col-md-3">
+                        <label for="f_inDate" class="form-label fw-semibold">In Date</label>
+                        <input type="date" id="f_inDate" class="form-control" />
+                    </div>
+                    <div class="col-md-3">
+                        <label for="f_inTime" class="form-label fw-semibold">In Time</label>
+                        <input type="text" id="f_inTime" class="form-control" maxlength="50" placeholder="Enter In Time" />
+                    </div>
+                    <div class="col-md-3">
+                        <label for="f_outDate" class="form-label fw-semibold">Out Date</label>
+                        <input type="date" id="f_outDate" class="form-control" />
+                    </div>
+                    <div class="col-md-3">
+                        <label for="f_outTime" class="form-label fw-semibold">Out Time</label>
+                        <input type="text" id="f_outTime" class="form-control" maxlength="50" placeholder="Enter Out Time" />
+                    </div>
+                    <div class="col-12">
+                        <label for="f_remarks" class="form-label fw-semibold">Remarks</label>
+                        <textarea id="f_remarks" class="form-control" rows="2" maxlength="500"></textarea>
+                    </div>
+                <div class="col-12 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-floppy-disk me-1"></i><span id="fSaveText">Save</span></button>
+                    <button type="button" class="btn btn-outline-secondary" id="fReset"><i class="fas fa-rotate me-1"></i>Reset</button>
+                </div>
+            </form>
+
+            <div class="sd-tools">
+                <div class="input-group grow">
+                    <span class="input-group-text bg-white"><i class="fas fa-magnifying-glass text-muted"></i></span>
+                    <input type="text" class="form-control" id="sdSearch" placeholder="Search vehicle, gate, driver..." autocomplete="off" />
+                </div>
+                <button type="button" class="sd-link" id="sdClear" style="display:none"><i class="fas fa-xmark me-1"></i>Clear filters</button>
+                <button type="button" class="sd-link" id="sdResetSort" style="display:none"><i class="fas fa-arrow-rotate-left me-1"></i>Default order</button>
+            </div>
+
+            <div class="sd-pane active" id="pane-all" data-page-size="25">
+                <div class="sd-wrap table-responsive">
+                    <table class="sd-table">
+                        <thead>
+                            <tr>
+                                <th class="text-center">Action</th>
+                                <th class="sortable text-nowrap" data-sort="c0">Vehicle No<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable text-nowrap" data-sort="c1">Gate No<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable text-nowrap" data-sort="c2">Driver<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable text-nowrap" data-sort="c3">Driver Mobile<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable text-nowrap" data-sort="c4">In Date<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable text-nowrap" data-sort="c5">In Time<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable text-nowrap" data-sort="c6">Out Date<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable text-nowrap" data-sort="c7">Out Time<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable text-nowrap" data-sort="c8">Remarks<i class="fas fa-sort arr"></i></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{ int idx = 0; }
+                            @foreach (var x in Model.Vehicles)
+                            {
+                                <tr data-search="@($"{x.VEHICLENO} {x.GATENO} {x.DRIVERNAME} {x.DRIVERMOBILE} {x.INTIME} {x.OUTTIME} {x.REMARKS}".ToLower())" data-i="@(idx++)" data-id="@x.ID" data-k-c0="@((x.VEHICLENO ?? "").ToLower())" data-k-c1="@((x.GATENO ?? "").ToLower())" data-k-c2="@((x.DRIVERNAME ?? "").ToLower())" data-k-c3="@((x.DRIVERMOBILE ?? "").ToLower())" data-k-c4="@(x.INDATE?.Ticks ?? 0)" data-k-c5="@((x.INTIME ?? "").ToLower())" data-k-c6="@(x.OUTDATE?.Ticks ?? 0)" data-k-c7="@((x.OUTTIME ?? "").ToLower())" data-k-c8="@((x.REMARKS ?? "").ToLower())">
+                                    <td class="text-center" data-label="Action"><div class="sd-cell"><button type="button" class="sd-btn" title="Edit" data-act="edit"><i class="fas fa-pen"></i></button></div></td>
+                                    <td data-label="Vehicle No"><div class="sd-cell">@(string.IsNullOrWhiteSpace(x.VEHICLENO) ? "-" : x.VEHICLENO)</div></td>
+                                    <td data-label="Gate No"><div class="sd-cell">@(string.IsNullOrWhiteSpace(x.GATENO) ? "-" : x.GATENO)</div></td>
+                                    <td data-label="Driver"><div class="sd-cell">@(string.IsNullOrWhiteSpace(x.DRIVERNAME) ? "-" : x.DRIVERNAME)</div></td>
+                                    <td data-label="Driver Mobile" class="text-nowrap"><div class="sd-cell">@(string.IsNullOrWhiteSpace(x.DRIVERMOBILE) ? "-" : x.DRIVERMOBILE)</div></td>
+                                    <td data-label="In Date" class="text-nowrap"><div class="sd-cell">@(x.INDATE?.ToString("dd/MM/yyyy") ?? "-")</div></td>
+                                    <td data-label="In Time" class="text-nowrap"><div class="sd-cell">@(string.IsNullOrWhiteSpace(x.INTIME) ? "-" : x.INTIME)</div></td>
+                                    <td data-label="Out Date" class="text-nowrap"><div class="sd-cell">@(x.OUTDATE?.ToString("dd/MM/yyyy") ?? "-")</div></td>
+                                    <td data-label="Out Time" class="text-nowrap"><div class="sd-cell">@(string.IsNullOrWhiteSpace(x.OUTTIME) ? "-" : x.OUTTIME)</div></td>
+                                    <td data-label="Remarks"><div class="sd-cell">@(string.IsNullOrWhiteSpace(x.REMARKS) ? "-" : x.REMARKS)</div></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="sd-empty" data-empty="all" style="@(Model.Vehicles.Count == 0 ? "" : "display:none")"><i class="far fa-folder-open"></i> No vehicle entry for this location in the last 15 days.</div>
+                <div class="sd-empty" data-empty="filter" style="display:none"><i class="fas fa-filter-circle-xmark"></i> No entry matched your filter.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            SD.initList();
+            var byId = function (id) { return document.getElementById(id); };
+            var J = window.jQuery;
+            var U = { page: '@Url.Action("VehicleInOut", "RegisterKhata")', get: '@Url.Action("GetVehicle", "RegisterKhata")', save: '@Url.Action("SaveVehicle", "RegisterKhata")' };
+            var fields = ['vehicleNo', 'gateNo', 'driverName', 'driverMobile', 'inDate', 'inTime', 'outDate', 'outTime', 'remarks'];
+            // drop downs may be Select2 (app-standard.js): refresh the visible box after setting a value
+            function setSel(el, v) { el.value = v; if (J) J(el).trigger('change.select2'); }
+            function editing() { return byId('fId').value !== '0'; }
+
+            function reset() {
+                byId('fId').value = '0';
+                fields.forEach(function (f) { var el = byId('f_' + f); if (el.tagName === 'SELECT') setSel(el, '0'); else el.value = ''; });
+                byId('fSaveText').textContent = 'Save';
+            }
+            function check() {
+                if (!byId('f_vehicleNo').value.trim()) return 'Enter Vehicle No';
+                if (!byId('f_gateNo').value.trim()) return 'Enter Gate No';
+                if (!byId('f_driverName').value.trim()) return 'Enter Driver Name';
+                if (!byId('f_driverMobile').value.trim()) return 'Enter Driver Mobile';
+                return null;
+            }
+
+            // old ddlLocation AutoPostBack: a new location shows its list (not while an entry is being edited)
+            var onLoc = function () { if (!editing()) location.href = U.page + '?locationId=' + encodeURIComponent(byId('fLocation').value); };
+            if (J) J(byId('fLocation')).on('change', onLoc); else byId('fLocation').addEventListener('change', onLoc);
+
+            document.querySelectorAll('.sd-btn[data-act="edit"]').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    fetch(U.get + '?id=' + encodeURIComponent(b.closest('tr').dataset.id), { credentials: 'same-origin' })
+                        .then(function (r) { return r.json(); })
+                        .then(function (res) {
+                            if (!res.success) { SD.toast(res.message, true); return; }
+                            var x = res.row;
+                            byId('fId').value = x.id;
+                            setSel(byId('fLocation'), x.locationId);
+                            fields.forEach(function (f) {
+                                var el = byId('f_' + f), v = x[f];
+                                if (el.tagName === 'SELECT') setSel(el, v || '0'); else el.value = (v === null || v === undefined) ? '' : v;
+                            });
+                            byId('fSaveText').textContent = 'Update';
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }).catch(function () { SD.toast('Server error. Please try again.', true); });
+                });
+            });
+
+            byId('fReset').addEventListener('click', reset);
+            byId('fm').addEventListener('submit', function (e) {
+                e.preventDefault();
+                var err = check(); if (err) { SD.toast(err, true); return; }
+                var data = { Id: byId('fId').value, LocationId: byId('fLocation').value };
+                fields.forEach(function (f) { data[f.charAt(0).toUpperCase() + f.slice(1)] = byId('f_' + f).value; });
+                var btn = e.submitter || byId('fm').querySelector('button[type="submit"]'), html = btn.innerHTML;
+                SD.lock(btn, editing() ? 'Updating...' : 'Saving...');
+                SD.post(U.save, data).then(function (res) {
+                    SD.toast(res.message, !res.success);
+                    if (res.success) setTimeout(function () { location.href = U.page + '?locationId=' + encodeURIComponent(byId('fLocation').value); }, 800);
+                    else { btn.disabled = false; btn.innerHTML = html; }
+                }).catch(function () { btn.disabled = false; btn.innerHTML = html; SD.toast('Server error. Please try again.', true); });
+            });
+        })();
+    </script>
+}

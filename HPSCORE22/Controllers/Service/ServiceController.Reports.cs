@@ -30,6 +30,7 @@ namespace QCMS.Controllers
             public string? Note;
             public RF Filters;
             public bool AutoRun;
+            public bool Wide = true;                                 // scroll box in both directions (default for every report)
             public List<C> Columns = new();
             public Action<ServiceReportFilter>? Defaults;            // first opening of the page
             public Func<ServiceReportFilter, string?>? Validate;     // error text, or null
@@ -45,7 +46,7 @@ namespace QCMS.Controllers
             nameof(ReportServiceCenter) => new ServiceReportDef
             {
                 Action = action, MenuUrl = "Service/ReportServiceCenter", Title = "Service Center Report", Icon = "fa-building",
-                Note = "Request counts per service center, exactly as YA's report (database view VW_SERVICECENTER).",
+                Note = "Request counts per service center.",
                 Filters = RF.None, AutoRun = true,
                 Columns = new()
                 {
@@ -166,7 +167,7 @@ namespace QCMS.Controllers
             var vm = new ServiceReportViewModel
             {
                 Action = def.Action, Title = def.Title, Icon = def.Icon, Note = def.Note, Filters = def.Filters, AutoRun = def.AutoRun,
-                Filter = f, Columns = def.Columns, MaxRows = Admin360.Repositories.ServiceRepository.ReportMaxRows
+                Wide = def.Wide, Filter = f, Columns = def.Columns, MaxRows = Admin360.Repositories.ServiceRepository.ReportMaxRows
             };
 
             if (searching)

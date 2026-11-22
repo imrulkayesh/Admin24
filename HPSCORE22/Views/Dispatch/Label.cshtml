@@ -145,13 +145,23 @@
             @if (Model.WithItems)
             {
                 <h4>Items</h4>
-                <table>
+               @*  <table>
                     <thead><tr><th>SL#</th><th>Item</th><th>Qty</th></tr></thead>
                     <tbody>
                         @for (int i = 0; i < Model.Items.Count; i++)
                         {
                             var it = Model.Items[i];
                             <tr><td>@(i + 1)</td><td>@it.ITEMNAME@(string.IsNullOrWhiteSpace(it.NOTES) ? "" : " (" + it.NOTES + ")")</td><td>@(it.QUANTITY?.ToString("0.##")) @it.UNIT</td></tr>
+                        }
+                    </tbody>
+                </table> *@
+                <table>
+                    <thead><tr><th>SL#</th><th>Item Name</th><th>Quantity</th><th>Remarks</th></tr></thead>
+                    <tbody>
+                        @for (int i = 0; i < Model.Items.Count; i++)
+                        {
+                            var it = Model.Items[i];
+                            <tr><td>@(i + 1)</td><td>@it.ITEMNAME</td><td>@(it.QUANTITY?.ToString("0.##")) @it.UNIT</td><td>@it.NOTES</td></tr>
                         }
                     </tbody>
                 </table>

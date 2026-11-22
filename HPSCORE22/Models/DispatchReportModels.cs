@@ -56,7 +56,8 @@ namespace AlphaCare.Models
         NoticeType = 256,   // dispatch type of the notice board
         Text = 512,         // free text (staff id / name / mobile / tracking no)
         Lc = 1024,          // LC no. + LC amount (only for dispatch type 3)
-        NoticeStatus = 2048 // waiting / received
+        NoticeStatus = 2048,// waiting / received
+        CreatedBy = 4096    // optional "Created By ID" (staff id, auto complete) - uses Filter.Staff
     }
 
     public class DispatchReportViewModel
@@ -67,6 +68,7 @@ namespace AlphaCare.Models
         public string? Note { get; set; }                  // what the report shows (the old rule in plain words)
         public ReportFilters Filters { get; set; }
         public bool AutoRun { get; set; }                  // shows the result without pressing Search (old pages that bound on load)
+        public bool Wide { get; set; } = true;             // own scroll box (both directions), sticky header + first columns - all dispatch reports
 
         public DispatchReportFilter Filter { get; set; } = new();
         public bool Searched { get; set; }

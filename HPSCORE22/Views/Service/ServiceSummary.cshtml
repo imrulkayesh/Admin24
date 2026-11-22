@@ -14,9 +14,12 @@
 }
 
 <style>
-    .ss-card { border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; height: 100%; }
-    .ss-card .ss-h { padding: 10px 14px; border-bottom: 1px solid #f1f5f9; font-weight: 700; color: #334155; display: flex; justify-content: space-between; gap: 8px; }
+    .sd-page, .sd-page > .card, .sd-page .card-body { min-width: 0; max-width: 100%; }
+    .ss-card { border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; height: 100%; min-width: 0; overflow: hidden; }
+    .ss-card .ss-h { padding: 10px 14px; border-bottom: 1px solid #f1f5f9; font-weight: 700; color: #334155; display: flex; justify-content: space-between; gap: 8px; min-width: 0; }
+    .ss-card .ss-h > span { min-width: 0; overflow-wrap: anywhere; }      /* long CENTERCODE-NAME-COUNT titles wrap, never clip */
     .ss-card .ss-b { padding: 10px; height: 280px; position: relative; }
+    @@media (max-width: 575.98px) { .ss-card .ss-b { height: 300px; } }
     .ss-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #94a3b8; }
 </style>
 
@@ -62,7 +65,7 @@
                     </div>
                 }
             </div>
-            <div class="small text-muted mt-3"><i class="fas fa-circle-info me-1"></i>Numbers from the database view VW_SERVICECENTER (same as YA's Service Summary).</div>
+            <div class="small text-muted mt-3"><i class="fas fa-circle-info me-1"></i>Service Summary.</div>
         </div>
     </div>
 </div>
@@ -82,7 +85,8 @@
                     data: { labels: labels, datasets: [{ data: c.data, backgroundColor: colors, borderWidth: 2 }] },
                     options: {
                         responsive: true, maintainAspectRatio: false, cutout: '40%',            // old pieHole: 0.4
-                        plugins: { legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 8 } } }
+                        // legend under the chart on narrow screens so the slices keep their room
+                        plugins: { legend: { position: window.innerWidth < 576 ? 'bottom' : 'right', labels: { usePointStyle: true, boxWidth: 8 } } }
                     }
                 });
             });

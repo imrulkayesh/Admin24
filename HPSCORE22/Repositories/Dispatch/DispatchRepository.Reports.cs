@@ -129,12 +129,14 @@ namespace Admin360.Repositories
 
         // old GatepassStatusReport.aspx: approved (STATUSID 2) more than 7 days ago and still not gate passed,
         // sender location is an active location that is not a depot / sales office. One row per item.
-        public List<IDictionary<string, object?>> ReportGatePassPending(DispatchReportFilter f)
+        public List<IDictionary<string, object?>> ReportGatePassPending(DispatchReportFilter f, string createdBy)
         {
             var p = new DynamicParameters();
             string w = "";
             if (f.From.HasValue) { w += " AND TRUNC(D.CREATEDATE) >= :DFrom"; p.Add("DFrom", f.From.Value.Date); }
             if (f.LocationId > 0) { w += " AND D.SENDBUSINESSCENTERID = :LocationId"; p.Add("LocationId", f.LocationId); }
+            // one staff member's pending gate passes: the person who created the dispatch (column "Created By ID")
+            if (!string.IsNullOrWhiteSpace(createdBy)) { w += " AND D.CREATEDBY = :CreatedBy"; p.Add("CreatedBy", createdBy.Trim()); }
             string sql = @"
                 SELECT D.ID, D.TRANSACTIONID, D.CREATEDATE, I.ISSUETYPENAME,
                        SB.CENTERNAME SENDERLOCATION, SDEP.DEPARTMENTNAME SENDERDEPARTMENT, D.FROMUSER SENDERUSER, SE.EMPLOYEENAME SENDERNAME,

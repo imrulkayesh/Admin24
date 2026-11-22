@@ -1,0 +1,191 @@
+@* Views/RegisterKhata/Receive.cshtml  (old YA: Pages/RegisterKhata/Receive.aspx)
+   Return of issued items: warehouse -> department (optional) -> open issue (TRNO--STAFFID) -> the lines still to receive.
+   Receive quantity is editable per line (old row edit); a line can be removed (not received now).
+   Save puts the quantities back into stock and closes the issue when everything is back. *@
+@model AlphaCare.Models.RkStorePageModel
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = "Receive";
+}
+
+<style>
+    .rk-box { border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; background: #fff; }
+    .rk-box h6 { font-weight: 700; color: #334155; margin-bottom: 12px; }
+    .rk-box h6 i { color: #4f46e5; }
+    .rk-lines { overflow: auto; max-height: 55vh; }
+    .rk-lines table { min-width: 700px; }
+    .rk-lines thead th { position: sticky; top: 0; background: #f8fafc; z-index: 1; }
+    .rk-lines input { max-width: 120px; margin-left: auto; text-align: right; }
+</style>
+
+<div class="container-fluid py-3" data-smart-page>
+    <div class="card shadow-sm border-0">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-right-to-bracket me-2"></i>Receive</h5>
+            <a class="btn btn-sm btn-light" href="@Url.Action("Issue", "RegisterKhata")"><i class="fas fa-right-from-bracket me-1"></i>Issue</a>
+        </div>
+
+        <div class="card-body">
+            @Html.AntiForgeryToken()
+            <div id="msg" class="alert d-none"></div>
+
+            <div class="rk-box mb-3">
+                <h6><i class="fas fa-magnifying-glass me-2"></i>Issue</h6>
+                <div class="row g-2">
+                    <div class="col-md-3">
+                        <label for="rCenter" class="form-label fw-semibold">Business Center <span class="text-danger">*</span></label>
+                        <select id="rCenter" class="form-select">
+                            @foreach (var c in Model.Locations)
+                            {
+                                <option value="@c.ID" selected="@(c.ID == Model.CenterId)">@c.CENTERNAME</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="rWarehouse" class="form-label fw-semibold">Warehouse <span class="text-danger">*</span></label>
+                        <select id="rWarehouse" class="form-select">
+                            <option value="0">Select</option>
+                            @foreach (var w in Model.Warehouses)
+                            {
+                                <option value="@w.ID">@w.NAME</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="rDept" class="form-label fw-semibold">Department</label>
+                        <select id="rDept" class="form-select"><option value="0">Select Department</option></select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="rIssue" class="form-label fw-semibold">Issue TR No <span class="text-danger">*</span></label>
+                        <select id="rIssue" class="form-select"><option value="0">Select Issue TR No</option></select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="rStaff" class="form-label fw-semibold">Staff</label>
+                        <input type="text" id="rStaff" class="form-control" readonly />
+                    </div>
+                    <div class="col-md-3">
+                        <label for="rPurpose" class="form-label fw-semibold">Purpose</label>
+                        <input type="text" id="rPurpose" class="form-control" readonly />
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <label for="rIssueDate" class="form-label fw-semibold">Issue Date</label>
+                        <input type="text" id="rIssueDate" class="form-control" readonly />
+                    </div>
+                    <div class="col-6 col-md-3">
+                        <label for="rReturnDate" class="form-label fw-semibold">Return Date</label>
+                        <input type="text" id="rReturnDate" class="form-control" readonly />
+                    </div>
+                </div>
+            </div>
+
+            <div class="rk-box mb-3">
+                <h6><i class="fas fa-list-check me-2"></i>Items to receive</h6>
+                <div class="rk-lines">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="table-light"><tr><th>#</th><th>Item Name</th><th>Item Code</th><th>Unit</th><th class="text-end">Issue Qty</th><th class="text-end">Receive Qty</th><th>Remarks</th><th class="text-center">Action</th></tr></thead>
+                        <tbody id="lineRows"></tbody>
+                    </table>
+                    <div class="text-muted small py-2" id="noLines">Choose an issue.</div>
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-success" id="btnSave" disabled><i class="fas fa-floppy-disk me-1"></i>Save</button>
+                <a class="btn btn-outline-secondary" href="@Url.Action("Receive", "RegisterKhata")"><i class="fas fa-rotate me-1"></i>Reset</a>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            var byId = function (id) { return document.getElementById(id); };
+            var J = window.jQuery, esc = SD.esc;
+            var U = {
+                page: '@Url.Action("Receive", "RegisterKhata")', warehouses: '@Url.Action("Warehouses", "RegisterKhata")',
+                lookups: '@Url.Action("ReceiveLookups", "RegisterKhata")', lines: '@Url.Action("IssueLines", "RegisterKhata")', save: '@Url.Action("SaveReceive", "RegisterKhata")'
+            };
+            var lines = [];      // { id, itemName, itemCode, unitName, issQty, recQty, max, remarks }
+            function on(el, fn) { if (J) J(el).on('change', fn); else el.addEventListener('change', fn); }
+            function fill(sel, list, first) { sel.innerHTML = first; (list || []).forEach(function (o) { sel.add(new Option(o.name, o.id)); }); if (J) J(sel).trigger('change.select2'); }
+            function getJson(url) { return fetch(url, { credentials: 'same-origin' }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }); }
+            function msg(text, ok) { var m = byId('msg'); m.className = 'alert ' + (ok ? 'alert-success' : 'alert-danger'); m.textContent = text; window.scrollTo({ top: 0, behavior: 'smooth' }); }
+            function clearIssue() { lines = []; draw(); ['rStaff', 'rPurpose', 'rIssueDate', 'rReturnDate'].forEach(function (f) { byId(f).value = ''; }); }
+
+            function draw() {
+                byId('noLines').style.display = lines.length ? 'none' : '';
+                byId('noLines').textContent = byId('rIssue').value === '0' ? 'Choose an issue.' : 'No item left to receive.';
+                byId('btnSave').disabled = !lines.length;
+                byId('lineRows').innerHTML = lines.map(function (l, i) {
+                    return '<tr data-i="' + i + '"><td>' + (i + 1) + '</td><td>' + esc(l.itemName) + '</td><td>' + esc(l.itemCode) + '</td><td>' + esc(l.unitName) +
+                        '</td><td class="text-end">' + esc(l.issQty) + '</td><td class="text-end"><input class="form-control form-control-sm" inputmode="decimal" value="' + esc(l.recQty) + '" title="Maximum ' + esc(l.max) + '" /></td><td>' +
+                        esc(l.remarks || '') + '</td><td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" title="Remove (do not receive now)"><i class="fas fa-trash"></i></button></td></tr>';
+                }).join('');
+            }
+            draw();
+
+            // old cascades
+            on(byId('rCenter'), function () {
+                fill(byId('rWarehouse'), [], '<option value="0">Select</option>'); fill(byId('rDept'), [], '<option value="0">Select Department</option>');
+                fill(byId('rIssue'), [], '<option value="0">Select Issue TR No</option>'); clearIssue();
+                getJson(U.warehouses + '?centerId=' + encodeURIComponent(byId('rCenter').value))
+                    .then(function (l) { fill(byId('rWarehouse'), l, '<option value="0">Select</option>'); }).catch(function () { });
+            });
+            on(byId('rWarehouse'), function () {
+                fill(byId('rDept'), [], '<option value="0">Select Department</option>'); fill(byId('rIssue'), [], '<option value="0">Select Issue TR No</option>'); clearIssue();
+                if (byId('rWarehouse').value === '0') return;
+                getJson(U.lookups + '?warehouseId=' + encodeURIComponent(byId('rWarehouse').value)).then(function (x) {
+                    fill(byId('rDept'), x.departments, '<option value="0">Select Department</option>');
+                    fill(byId('rIssue'), x.issues, '<option value="0">Select Issue TR No</option>');
+                }).catch(function () { SD.toast('Could not load the warehouse lists.', true); });
+            });
+            on(byId('rDept'), function () {
+                fill(byId('rIssue'), [], '<option value="0">Select Issue TR No</option>'); clearIssue();
+                if (byId('rWarehouse').value === '0') return;
+                getJson(U.lookups + '?warehouseId=' + encodeURIComponent(byId('rWarehouse').value) + '&departmentId=' + encodeURIComponent(byId('rDept').value))
+                    .then(function (x) { fill(byId('rIssue'), x.issues, '<option value="0">Select Issue TR No</option>'); }).catch(function () { });
+            });
+            on(byId('rIssue'), function () {
+                clearIssue();
+                if (byId('rIssue').value === '0') return;
+                getJson(U.lines + '?issueId=' + encodeURIComponent(byId('rIssue').value)).then(function (x) {
+                    if (!x.success) { SD.toast(x.message, true); return; }
+                    byId('rStaff').value = x.staffId || ''; byId('rPurpose').value = x.purpose || '';
+                    byId('rIssueDate').value = x.issueDate || ''; byId('rReturnDate').value = x.returnDate || '';
+                    lines = x.lines.map(function (l) { return { id: l.id, itemName: l.itemName, itemCode: l.itemCode, unitName: l.unitName, issQty: l.issQty, recQty: l.recQty, max: l.recQty, remarks: l.remarks }; });
+                    draw();
+                }).catch(function () { SD.toast('Could not load the issue.', true); });
+            });
+
+            byId('lineRows').addEventListener('input', function (e) {
+                if (e.target.tagName !== 'INPUT') return;
+                lines[+e.target.closest('tr').dataset.i].recQty = e.target.value.trim();
+            });
+            byId('lineRows').addEventListener('click', function (e) {
+                var b = e.target.closest('button'); if (!b) return;
+                if (!confirm('Are you sure?')) return;
+                lines.splice(+b.closest('tr').dataset.i, 1); draw();
+            });
+
+            // old btnSave_OnClick
+            byId('btnSave').addEventListener('click', function () {
+                if (!lines.length) { msg('Please add item first.', false); return; }
+                for (var i = 0; i < lines.length; i++) {
+                    var q = parseFloat(lines[i].recQty);
+                    if (!/^(\d*\.)?\d+$/.test(lines[i].recQty) || q <= 0 || q > parseFloat(lines[i].max)) {
+                        msg('Receive quantity of ' + lines[i].itemName + ' must be more than 0 and not more than ' + lines[i].max + '.', false); return;
+                    }
+                }
+                var data = { issueId: byId('rIssue').value };
+                lines.forEach(function (l, i) { data['lines[' + i + '].LineId'] = l.id; data['lines[' + i + '].Qty'] = l.recQty; });
+                var btn = this, html = btn.innerHTML; SD.lock(btn, 'Saving...');
+                SD.post(U.save, data).then(function (res) {
+                    if (res.success) { msg(res.message, true); setTimeout(function () { location.href = U.page; }, 1800); }
+                    else { msg(res.message, false); btn.disabled = false; btn.innerHTML = html; }
+                }).catch(function () { msg('Save Fail. Please try again.', false); btn.disabled = false; btn.innerHTML = html; });
+            });
+        })();
+    </script>
+}

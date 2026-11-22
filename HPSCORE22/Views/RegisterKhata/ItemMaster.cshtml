@@ -1,0 +1,166 @@
+@* Views/RegisterKhata/ItemMaster.cshtml  (old YA: Pages/RegisterKhata/ItemMaster.aspx)
+   Items of the user's warehouse (EM_EMPLOYEE.WAREHOUSEID). New item: name, code (unique in the warehouse), unit, description.
+   Edit (as YA): only the unit and the description change - name, code and warehouse are locked. *@
+@model AlphaCare.Models.RkStorePageModel
+
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    ViewData["Title"] = "Item Master";
+}
+
+<div class="sd-page" data-smart-page>
+    <div class="card shadow-sm border-0">
+        <div class="sd-head">
+            <h5 class="mb-0"><i class="fas fa-box me-2"></i>Item Master</h5>
+            <span class="sd-date"><i class="far fa-calendar me-1"></i>@DateTime.Today.ToString("dddd, dd MMMM yyyy")</span>
+        </div>
+
+        <div class="card-body">
+            @Html.AntiForgeryToken()
+
+            @if (Model.Warehouses.Count == 0)
+            {
+                <div class="alert alert-warning py-2"><i class="fas fa-triangle-exclamation me-1"></i>You have no warehouse at this location. Ask an administrator to set it on Warehouse Permission.</div>
+            }
+
+            <form id="fm" class="row g-2 mb-3" autocomplete="off">
+                <input type="hidden" id="fId" value="0" />
+                <div class="col-md-3">
+                    <label for="fCenter" class="form-label fw-semibold">Business Center <span class="text-danger">*</span></label>
+                    <select id="fCenter" class="form-select">
+                        @foreach (var c in Model.Locations)
+                        {
+                            <option value="@c.ID" selected="@(c.ID == Model.CenterId)">@c.CENTERNAME</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="fWarehouse" class="form-label fw-semibold">Warehouse <span class="text-danger">*</span></label>
+                    <select id="fWarehouse" class="form-select">
+                        @foreach (var w in Model.Warehouses)
+                        {
+                            <option value="@w.ID" selected="@(w.ID == Model.WarehouseId)">@w.NAME</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="fName" class="form-label fw-semibold">Item Name <span class="text-danger">*</span></label>
+                    <input type="text" id="fName" class="form-control" maxlength="200" />
+                </div>
+                <div class="col-md-3">
+                    <label for="fCode" class="form-label fw-semibold">Item Code <span class="text-danger">*</span></label>
+                    <input type="text" id="fCode" class="form-control" maxlength="100" />
+                </div>
+                <div class="col-md-3">
+                    <label for="fUnit" class="form-label fw-semibold">Item Unit <span class="text-danger">*</span></label>
+                    <select id="fUnit" class="form-select">
+                        <option value="0">Select</option>
+                        @foreach (var u in Model.Units)
+                        {
+                            <option value="@u.ID">@u.NAME</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label for="fDesc" class="form-label fw-semibold">Description</label>
+                    <input type="text" id="fDesc" class="form-control" maxlength="500" />
+                </div>
+                <div class="col-md-3 d-flex align-items-end gap-2">
+                    <button type="submit" class="btn btn-primary" disabled="@(Model.WarehouseId == 0)"><i class="fas fa-floppy-disk me-1"></i><span id="fSaveText">Save</span></button>
+                    <button type="button" class="btn btn-outline-secondary" id="fReset"><i class="fas fa-rotate me-1"></i>Reset</button>
+                </div>
+            </form>
+
+            <div class="sd-tools">
+                <div class="input-group grow">
+                    <span class="input-group-text bg-white"><i class="fas fa-magnifying-glass text-muted"></i></span>
+                    <input type="text" class="form-control" id="sdSearch" placeholder="Search item, code, unit..." autocomplete="off" />
+                </div>
+                <button type="button" class="sd-link" id="sdClear" style="display:none"><i class="fas fa-xmark me-1"></i>Clear filters</button>
+                <button type="button" class="sd-link" id="sdResetSort" style="display:none"><i class="fas fa-arrow-rotate-left me-1"></i>Default order</button>
+            </div>
+
+            <div class="sd-pane active" id="pane-all" data-page-size="25">
+                <div class="sd-wrap table-responsive">
+                    <table class="sd-table">
+                        <thead>
+                            <tr>
+                                <th class="text-center">Action</th>
+                                <th class="sortable" data-sort="wh">Warehouse<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable" data-sort="name">Item Name<i class="fas fa-sort arr"></i></th>
+                                <th class="sortable" data-sort="code">Item Code<i class="fas fa-sort arr"></i></th>
+                                <th>Unit</th>
+                                <th class="text-end">Stock</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @{ int idx = 0; }
+                            @foreach (var x in Model.ItemRows)
+                            {
+                                <tr data-search="@($"{x.ITEMNAME} {x.ITEMCODE} {x.UNITNAME} {x.DESCRIPTION}".ToLower())" data-i="@(idx++)"
+                                    data-k-wh="@((x.WAREHOUSENAME ?? "").ToLower())" data-k-name="@((x.ITEMNAME ?? "").ToLower())" data-k-code="@((x.ITEMCODE ?? "").ToLower())"
+                                    data-id="@x.ID" data-name="@x.ITEMNAME" data-code="@x.ITEMCODE" data-unit="@x.UNITID" data-desc="@x.DESCRIPTION" data-wh="@x.WAREHOUSEID">
+                                    <td class="text-center" data-label="Action"><div class="sd-cell"><button type="button" class="sd-btn" title="Edit" data-act="edit"><i class="fas fa-pen"></i></button></div></td>
+                                    <td data-label="Warehouse"><div class="sd-cell">@x.WAREHOUSENAME</div></td>
+                                    <td data-label="Item Name"><div class="sd-cell">@x.ITEMNAME</div></td>
+                                    <td data-label="Item Code"><div class="sd-cell">@x.ITEMCODE</div></td>
+                                    <td data-label="Unit"><div class="sd-cell">@x.UNITNAME</div></td>
+                                    <td data-label="Stock" class="text-end"><div class="sd-cell">@((x.ITEMSTOCK ?? 0).ToString("#,0.##"))</div></td>
+                                    <td data-label="Description"><div class="sd-cell">@(string.IsNullOrWhiteSpace(x.DESCRIPTION) ? "-" : x.DESCRIPTION)</div></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="sd-empty" data-empty="all" style="@(Model.ItemRows.Count == 0 ? "" : "display:none")"><i class="far fa-folder-open"></i> No item in this warehouse.</div>
+                <div class="sd-empty" data-empty="filter" style="display:none"><i class="fas fa-filter-circle-xmark"></i> No item matched your filter.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        (function () {
+            SD.initList();
+            var byId = function (id) { return document.getElementById(id); };
+            var J = window.jQuery;
+            var page = '@Url.Action("ItemMaster", "RegisterKhata")';
+            function on(el, fn) { if (J) J(el).on('change', fn); else el.addEventListener('change', fn); }
+            function setSel(el, v) { el.value = v; if (J) J(el).trigger('change.select2'); }
+            function lock(edit) { byId('fName').readOnly = edit; byId('fCode').readOnly = edit; byId('fWarehouse').disabled = edit; byId('fCenter').disabled = edit; }
+            function reset() { byId('fId').value = '0'; byId('fName').value = ''; byId('fCode').value = ''; byId('fDesc').value = ''; setSel(byId('fUnit'), '0'); lock(false); byId('fSaveText').textContent = 'Save'; }
+
+            // old ddlBusinessCenter / warehouse AutoPostBack
+            on(byId('fCenter'), function () { location.href = page + '?centerId=' + encodeURIComponent(byId('fCenter').value); });
+            on(byId('fWarehouse'), function () { location.href = page + '?centerId=' + encodeURIComponent(byId('fCenter').value) + '&warehouseId=' + encodeURIComponent(byId('fWarehouse').value); });
+
+            document.querySelectorAll('.sd-btn[data-act="edit"]').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    var d = b.closest('tr').dataset;
+                    byId('fId').value = d.id; byId('fName').value = d.name || ''; byId('fCode').value = d.code || ''; byId('fDesc').value = d.desc || '';
+                    setSel(byId('fUnit'), d.unit || '0'); lock(true);
+                    byId('fSaveText').textContent = 'Update'; window.scrollTo({ top: 0, behavior: 'smooth' });
+                });
+            });
+            byId('fReset').addEventListener('click', reset);
+            byId('fm').addEventListener('submit', function (e) {
+                e.preventDefault();
+                var isEdit = byId('fId').value !== '0';
+                if (!isEdit && !byId('fName').value.trim()) { SD.toast('Enter Item Name', true); return; }
+                if (!isEdit && !byId('fCode').value.trim()) { SD.toast('Enter Item Code', true); return; }
+                if (byId('fUnit').value === '0') { SD.toast('Select Item Unit', true); return; }
+                var btn = e.submitter || byId('fm').querySelector('button[type="submit"]'), html = btn.innerHTML;
+                SD.lock(btn, isEdit ? 'Updating...' : 'Saving...');
+                SD.post('@Url.Action("SaveItem", "RegisterKhata")', {
+                    id: byId('fId').value, warehouseId: byId('fWarehouse').value, itemName: byId('fName').value.trim(),
+                    itemCode: byId('fCode').value.trim(), unitId: byId('fUnit').value, description: byId('fDesc').value.trim()
+                }).then(function (res) {
+                    SD.toast(res.message, !res.success);
+                    if (res.success) setTimeout(function () { location.reload(); }, 800); else { btn.disabled = false; btn.innerHTML = html; }
+                }).catch(function () { btn.disabled = false; btn.innerHTML = html; SD.toast('Server error. Please try again.', true); });
+            });
+        })();
+    </script>
+}
