@@ -300,6 +300,20 @@ namespace AlphaCare.Models
         public string? DEPARTMENTCODE { get; set; }
     }
 
+    // SC_SERVICEIMAGE: images of a request (new table - App_Data/Sql/Service_Images.sql)
+    public class ServiceImageModel
+    {
+        public long ID { get; set; }
+        public long REQUESTID { get; set; }
+        public string? FILENAME { get; set; }          // stored file name in Service:AttachmentFolder
+        public string? ORIGINALNAME { get; set; }
+        public string? CONTENTTYPE { get; set; }
+        public long? FILESIZE { get; set; }
+        public string? CREATEDBY { get; set; }
+        public DateTime? CREATEDATE { get; set; }
+        public string? EMPLOYEENAME { get; set; }      // uploaded by
+    }
+
     // active SC_SERVICEASSIGN row (old GetRatings) + the service person
     public class ServiceAssignModel
     {
@@ -373,6 +387,7 @@ namespace AlphaCare.Models
         public List<BusinessCenterModel> BusinessCenters { get; set; } = new();
         public List<ServiceOption> Machines { get; set; } = new();
         public List<ServiceItemModel> Items { get; set; } = new();
+        public List<ServiceImageModel> Images { get; set; } = new();
         public bool AttachmentsEnabled { get; set; }
     }
 
@@ -400,6 +415,8 @@ namespace AlphaCare.Models
         public List<ServiceItemModel> Items { get; set; } = new();
         public List<RequiredAccessoryModel> Accessories { get; set; } = new();
         public List<ServiceRemarkModel> Remarks { get; set; } = new();
+        public List<ServiceImageModel> Images { get; set; } = new();
+        public bool CanAddImages { get; set; }                // people on the request, until it is completed
 
         // what the logged in user may do here (each one = the list rule of the old page that offered the button)
         public bool CanApprove { get; set; }                  // approver: pending or rejected (re-approve)

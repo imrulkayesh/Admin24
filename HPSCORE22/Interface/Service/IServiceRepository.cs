@@ -28,12 +28,12 @@ namespace AlphaCare.Interface
         List<string> SearchSubjects(string term);
 
         // ---------------- assign / forward lookups (AssignService.aspx) ----------------
-        /// <summary>Old GetServiceCenter(role): roles 9/51 = centers where I supervise a team, others = centers where I am the admin</summary>
-        List<ServiceOption> GetServiceCentersForAssign(string staffId, int roleId);
-        /// <summary>Old dalServiceTeam.GetByServiceCenterId(center, role): roles 9/51 only the teams with SUPERVISOR = my USERID</summary>
-        List<ServiceOption> GetTeamsForAssign(int serviceCenterId, int roleId, string userId);
-        /// <summary>Old dalServiceTeam.GetAllTeamMember(center, team, role): roles 9/51/65 = team members, others = the team supervisor</summary>
-        List<ServiceStaffOption> GetMembersForAssign(int serviceCenterId, int teamId, int roleId);
+        /// <summary>Centers where the user is the center admin or supervises a team</summary>
+        List<ServiceOption> GetServiceCentersForAssign(string staffId);
+        /// <summary>Center admin: all teams of the center; team supervisor: the teams he supervises</summary>
+        List<ServiceOption> GetTeamsForAssign(int serviceCenterId, string staffId);
+        /// <summary>Active members + supervisor of a team the user may assign to</summary>
+        List<ServiceStaffOption> GetMembersForAssign(int serviceCenterId, int teamId, string staffId);
         /// <summary>Old dalServiceCenter.GetServiceCenterAdminDetails</summary>
         ServiceCenterAdminModel? GetServiceCenterAdmin(int serviceCenterId);
         /// <summary>Old GetServiceCenterDetails(staffId): first active SC_TEAMMEMBER row (instant service)</summary>

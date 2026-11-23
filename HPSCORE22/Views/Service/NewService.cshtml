@@ -6,6 +6,15 @@
 @{
     Layout = "~/Views/Shared/_Layout.cshtml";
     ViewData["Title"] = "New Service";
+    var initImages = Model.Images.Select(i => new
+    {
+        id = i.ID,
+        url = Url.Action("ServiceImage", "Service", new { id = i.ID }),
+        name = string.IsNullOrWhiteSpace(i.ORIGINALNAME) ? i.FILENAME : i.ORIGINALNAME,
+        by = i.EMPLOYEENAME ?? i.CREATEDBY,
+        date = i.CREATEDATE?.ToString("dd/MM/yyyy hh:mm tt"),
+        mine = i.CREATEDBY == Context.Session.GetString("STAFFID")
+    });
     var initItems = Model.Items.Select(i => new
     {
         id = i.ID,
@@ -22,6 +31,24 @@
     .sv-box h6 { font-weight: 700; color: #334155; margin-bottom: 12px; }
     .sv-box h6 i { color: #4f46e5; }
     .sv-items td, .sv-items th { vertical-align: middle; }
+    /* ===== service images ===== */
+    .sv-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
+    .sv-thumb { position: relative; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; background: #f8fafc; aspect-ratio: 1 / 1; }
+        .sv-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; cursor: zoom-in; transition: transform .2s ease; }
+        .sv-thumb:hover img { transform: scale(1.04); }
+        .sv-thumb .sv-del {
+            position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border-radius: 50%; border: 0;
+            background: rgba(220, 38, 38, .92); color: #fff; font-size: .75rem; display: flex; align-items: center; justify-content: center; cursor: pointer;
+        }
+        .sv-thumb .sv-cap {
+            position: absolute; left: 0; right: 0; bottom: 0; padding: 3px 6px; font-size: .68rem; color: #fff;
+            background: linear-gradient(transparent, rgba(15, 23, 42, .75)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+    .sv-drop { border: 2px dashed #c7d2fe; border-radius: 10px; padding: 12px; background: #f8faff; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+        .sv-drop.over { border-color: #4f46e5; background: #eef2ff; }
+    .sv-img-modal .modal-body { background: #0f172a; display: flex; align-items: center; justify-content: center; min-height: 50vh; padding: 0; }
+        .sv-img-modal img { max-width: 100%; max-height: 78vh; object-fit: contain; }
+    @@media (max-width: 575.98px) { .sv-gallery { grid-template-columns: repeat(3, 1fr); gap: 6px; } }
     @@media (max-width: 767px) {
         .sv-items thead { display: none; }
         .sv-items tr { display: block; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 10px; padding: 6px; }
@@ -63,7 +90,7 @@
                         <label class="form-label fw-semibold" for="sCategory">Service Category <span class="text-danger">*</span></label>
                         <select id="sCategory" class="form-select"><option value="0">Select</option></select>
                     </div>
-                    <div class="col-md-3" style="display: none;">
+                    <div class="col-md-3">
                         <label class="form-label fw-semibold" for="sMachine">Outlet / Machine</label>
                         <select id="sMachine" class="form-select">
                             <option value="0">Select</option>
@@ -113,9 +140,39 @@
                 </div>
             </div>
 
+            <!-- service images (SC_SERVICEIMAGE) -->
+            <div class="sv-box mb-3" id="images">
+                <h6><i class="fas fa-images me-2"></i>Images <span class="badge bg-secondary" id="imgCount">0</span> <span class="small text-muted fw-normal">(photos of the problem, the machine...)</span></h6>
+                @if (Model.AttachmentsEnabled)
+                {
+                    <div class="sv-drop mb-2" id="imgDrop">
+                        <input type="file" id="imgFiles" class="form-control" accept="image/jpeg,image/png,image/gif,image/webp,image/bmp" multiple style="max-width:340px" />
+                        <button type="button" class="btn btn-primary btn-sm" id="btnImgUpload"><i class="fas fa-cloud-arrow-up me-1"></i>Upload</button>
+                        <span class="small text-muted">JPG, PNG, GIF, WEBP or BMP &middot; up to 10 MB each &middot; at most 20 per request. You can also drop images here.</span>
+                    </div>
+                }
+                <div class="sv-gallery" id="imgGallery"></div>
+                <div class="text-muted small" id="noImages">No image.</div>
+            </div>
+
             <div class="d-flex gap-2">
                 <button type="button" class="btn btn-primary" id="btnSave"><i class="fas fa-paper-plane me-1"></i>Save</button>
             </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- image preview -->
+<div class="modal fade sv-img-modal" id="imgModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h6 class="modal-title text-truncate" id="imgModalTitle"></h6>
+                <a class="btn btn-sm btn-outline-secondary ms-auto me-2" id="imgModalOpen" target="_blank" rel="noopener"><i class="fas fa-up-right-from-square me-1"></i>Open</a>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body"><img id="imgModalImg" alt="" /></div>
         </div>
     </div>
 </div>
@@ -221,6 +278,64 @@
                     .catch(function (err) { SD.toast(String(err.message) === '413' ? 'The file is too big.' : 'Server error. Please try again.', true); })
                     .finally(function () { btn.disabled = false; btn.innerHTML = html; });
             });
+
+            /* ===== service images ===== */
+            (function () {
+                var requestId = '@Model.RequestId', canAdd = @(Model.AttachmentsEnabled ? "true" : "false");
+                var images = @Json.Serialize(initImages);
+                var U = { upload: '@Url.Action("UploadImages", "Service")', del: '@Url.Action("DeleteImage", "Service")' };
+                var g = document.getElementById('imgGallery');
+                function token() { return document.querySelector('input[name="__RequestVerificationToken"]').value; }
+                function draw() {
+                    document.getElementById('imgCount').textContent = images.length;
+                    document.getElementById('noImages').style.display = images.length ? 'none' : '';
+                    g.innerHTML = images.map(function (i) {
+                        return '<div class="sv-thumb" data-id="' + i.id + '">' +
+                            '<img src="' + SD.esc(i.url) + '" alt="' + SD.esc(i.name || '') + '" loading="lazy" data-url="' + SD.esc(i.url) + '" data-name="' + SD.esc(i.name || '') + '" />' +
+                            (canAdd && i.mine ? '<button type="button" class="sv-del" title="Remove"><i class="fas fa-xmark"></i></button>' : '') +
+                            '<div class="sv-cap" title="' + SD.esc((i.by || '') + ' ' + (i.date || '')) + '">' + SD.esc(i.by || '') + '</div></div>';
+                    }).join('');
+                }
+                draw();
+
+                // preview (Bootstrap modal of the layout)
+                g.addEventListener('click', function (e) {
+                    var del = e.target.closest('.sv-del');
+                    if (del) {
+                        var id = del.closest('.sv-thumb').dataset.id;
+                        SD.confirm({ title: 'Remove this image?', tone: 'danger', icon: 'fa-trash', yesText: 'Remove',
+                                     run: function () { return SD.post(U.del, { id: id }); } })
+                          .then(function (res) { if (res && res.success) { images = res.images; draw(); SD.toast(res.message); } });
+                        return;
+                    }
+                    var img = e.target.closest('img'); if (!img) return;
+                    document.getElementById('imgModalImg').src = img.dataset.url;
+                    document.getElementById('imgModalTitle').textContent = img.dataset.name;
+                    document.getElementById('imgModalOpen').href = img.dataset.url;
+                    bootstrap.Modal.getOrCreateInstance(document.getElementById('imgModal')).show();
+                });
+
+                if (!canAdd) return;
+                var input = document.getElementById('imgFiles'), btn = document.getElementById('btnImgUpload'), drop = document.getElementById('imgDrop');
+                function upload(fileList) {
+                    var files = Array.prototype.slice.call(fileList || []);
+                    if (!files.length) { SD.toast('Choose at least one image.', true); return; }
+                    var fd = new FormData();
+                    fd.append('requestId', requestId);
+                    files.forEach(function (f) { fd.append('files', f); });
+                    fd.append('__RequestVerificationToken', token());
+                    var html = btn.innerHTML; SD.lock(btn, 'Uploading...');
+                    fetch(U.upload, { method: 'POST', credentials: 'same-origin', body: fd })
+                        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+                        .then(function (res) { if (res.images) { images = res.images; draw(); } SD.toast(res.message, !res.success); if (res.success) input.value = ''; })
+                        .catch(function (err) { SD.toast(String(err.message) === '413' ? 'The images are too big.' : 'Upload failed. Please try again.', true); })
+                        .finally(function () { btn.disabled = false; btn.innerHTML = html; });
+                }
+                btn.addEventListener('click', function () { upload(input.files); });
+                ['dragenter', 'dragover'].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add('over'); }); });
+                ['dragleave', 'drop'].forEach(function (ev) { drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.remove('over'); }); });
+                drop.addEventListener('drop', function (e) { upload(e.dataTransfer.files); });
+            })();
 
             /* ===== SAVE (old btnSave_Click) ===== */
             byId('btnSave').addEventListener('click', function () {

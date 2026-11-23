@@ -86,6 +86,54 @@ namespace AlphaCare.Services
             return (null, "The file could not be saved (too many files with the same name).");
         }
 
+        // ===================================================================================== images (SC_SERVICEIMAGE)
+        public const long MaxImageBytes = 10L * 1024 * 1024;     // 10 MB per image
+        private static readonly Dictionary<string, string> ImageTypes = new(StringComparer.OrdinalIgnoreCase)
+        {
+            [".jpg"] = "image/jpeg", [".jpeg"] = "image/jpeg", [".png"] = "image/png", [".gif"] = "image/gif",
+            [".webp"] = "image/webp", [".bmp"] = "image/bmp"
+        };
+
+        /// <summary>
+        /// Saves a service image as "{requestId}_IMG_{yyyyMMddHHmmssfff}_{random}.ext" (never overwrites). Only real image files:
+        /// the extension and the first bytes (file signature) must both be an image. Returns stored name + content type, or an error text.
+        /// </summary>
+        public async Task<(string? FileName, string? ContentType, string? Error)> SaveImageAsync(IFormFile file, long requestId)
+        {
+            if (_folder == null) return (null, null, "Attachments are not configured on this server.");
+            if (file.Length <= 0) return (null, null, $"{file.FileName}: the file is empty.");
+            if (file.Length > MaxImageBytes) return (null, null, $"{file.FileName}: too big (maximum 10 MB).");
+            string ext = Path.GetExtension(file.FileName ?? "");
+            if (!ImageTypes.TryGetValue(ext, out var contentType)) return (null, null, $"{file.FileName}: only JPG, PNG, GIF, WEBP or BMP images can be added.");
+            if (!Directory.Exists(_folder)) return (null, null, "The attachment folder cannot be reached. Please contact Admin.");
+
+            // the content must really be an image
+            var head = new byte[12];
+            await using (var s = file.OpenReadStream()) { _ = await s.ReadAsync(head.AsMemory(0, head.Length)); }
+            if (!LooksLikeImage(head)) return (null, null, $"{file.FileName}: the file is not a valid image.");
+
+            string name = $"{requestId}_IMG_{DateTime.Now:yyyyMMddHHmmssfff}_{Guid.NewGuid().ToString("N")[..6]}{ext.ToLowerInvariant()}";
+            string full = Path.Combine(_folder, name);
+            try
+            {
+                await using var stream = new FileStream(full, FileMode.CreateNew, FileAccess.Write);
+                await file.CopyToAsync(stream);
+                return (name, contentType, null);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Service image could not be saved. RequestId={RequestId}", requestId);
+                return (null, null, $"{file.FileName}: could not be saved. Please try again.");
+            }
+        }
+
+        private static bool LooksLikeImage(byte[] h) =>
+            (h[0] == 0xFF && h[1] == 0xD8 && h[2] == 0xFF)                                                    // jpeg
+            || (h[0] == 0x89 && h[1] == 0x50 && h[2] == 0x4E && h[3] == 0x47)                                 // png
+            || (h[0] == 0x47 && h[1] == 0x49 && h[2] == 0x46 && h[3] == 0x38)                                 // gif
+            || (h[0] == 0x52 && h[1] == 0x49 && h[2] == 0x46 && h[3] == 0x46 && h[8] == 0x57 && h[9] == 0x45) // webp (RIFF....WEBP)
+            || (h[0] == 0x42 && h[1] == 0x4D);                                                                 // bmp
+
         /// <summary>Full path + content type of a stored attachment, or null when it does not exist in the folder.</summary>
         public (string Path, string ContentType)? Find(string? storedName)
         {

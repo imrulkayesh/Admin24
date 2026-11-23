@@ -5,7 +5,10 @@
 //   * several statements that belong together run in one transaction (assign, instant service, forward, rating)
 //   * a request is only changed by somebody whose list shows it (checked by the caller with InList / IsOwnDraft)
 //   * SERVICEID: location number padded to 3 digits for locations 10..99 (old code made 4 digits there - see MIGRATION_SERVICE.md)
-// The SELECT lists, joins and WHERE rules of every list are the old ones (incl. INNER JOIN SC_MACHINE, roles 9/51/65).
+// Workflow (2026-11 change): a new request is approved by the SERVICE CENTER ADMIN (SC_SERVICECENTER.CENTERADMIN of the
+// request's current center - the forwarded-to center when forwarded); the old DP_APPROVER line approval is not used any more.
+// After approval the center admin AND the team supervisors of that center (SC_SERVICETEAM.SUPERVISOR) assign it to a team member.
+// Supervisors are found from SC_SERVICETEAM, not from role numbers. Machine join = LEFT JOIN (a request without machine is listed).
 // NOTE: bind variable names must not be Oracle reserved words (:Date, :Level, :Size, :Start, :Member ... -> ORA-01745)
 using AlphaCare.Interface;
 using AlphaCare.Models;
@@ -20,9 +23,6 @@ namespace Admin360.Repositories
         private readonly DatabaseService _databaseService;
         private readonly ILogger<ServiceRepository> _logger;
 
-        // roles of the old code (SessionManager.SessionName.RoleId): team supervisors
-        private static readonly int[] SupervisorRoles = { 9, 51, 65 };      // GetByAdminRequest / GetByAdminAssignedRequest / GetAllTeamMember
-        private static readonly int[] TeamRoles = { 9, 51 };                // GetServiceCenter / dalServiceTeam.GetByServiceCenterId
 
         public ServiceRepository(DatabaseService databaseService, ILogger<ServiceRepository> logger)
         {
@@ -109,47 +109,51 @@ namespace Admin360.Repositories
             return conn.Query<string>(sql, new { Term = term.Trim().ToLowerInvariant() }).ToList();
         }
 
-        public List<ServiceOption> GetServiceCentersForAssign(string staffId, int roleId)
+        // centers where the user is the center admin or supervises a team
+        public List<ServiceOption> GetServiceCentersForAssign(string staffId)
         {
             using var conn = _databaseService.GetConnection();
-            string sql = TeamRoles.Contains(roleId)
-                ? @"SELECT ID, SERVICECENTERNAME NAME FROM SC_SERVICECENTER
-                     WHERE ID IN (SELECT SERVICECENTERID FROM SC_SERVICETEAM WHERE SUPERVISOR = :StaffId)
-                     ORDER BY SERVICECENTERNAME"
-                : "SELECT ID, SERVICECENTERNAME NAME FROM SC_SERVICECENTER WHERE CENTERADMIN = :StaffId ORDER BY SERVICECENTERNAME";
-            return conn.Query<ServiceOption>(sql, new { StaffId = staffId }).ToList();
+            const string sql = @"
+                SELECT ID, SERVICECENTERNAME NAME FROM SC_SERVICECENTER
+                 WHERE CENTERADMIN = :S1
+                    OR ID IN (SELECT SERVICECENTERID FROM SC_SERVICETEAM WHERE SUPERVISOR = :S2)
+                 ORDER BY SERVICECENTERNAME";
+            return conn.Query<ServiceOption>(sql, new { S1 = staffId, S2 = staffId }).ToList();
         }
 
-        // old code compared SUPERVISOR with SessionName.UserId (UC_USERS.ID) for roles 9/51 - kept (see MIGRATION_SERVICE.md)
-        public List<ServiceOption> GetTeamsForAssign(int serviceCenterId, int roleId, string userId)
+        // center admin: every team of the center; team supervisor: the teams he supervises
+        public List<ServiceOption> GetTeamsForAssign(int serviceCenterId, string staffId)
         {
             using var conn = _databaseService.GetConnection();
-            if (TeamRoles.Contains(roleId))
-                return conn.Query<ServiceOption>(
-                    "SELECT ID, TEAMNAME NAME FROM SC_SERVICETEAM WHERE SERVICECENTERID = :Sc AND SUPERVISOR = :UserId ORDER BY TEAMNAME",
-                    new { Sc = serviceCenterId, UserId = userId }).ToList();
-            return conn.Query<ServiceOption>(
-                "SELECT ID, TEAMNAME NAME FROM SC_SERVICETEAM WHERE SERVICECENTERID = :Sc ORDER BY TEAMNAME",
-                new { Sc = serviceCenterId }).ToList();
+            const string sql = @"
+                SELECT T.ID, T.TEAMNAME NAME
+                  FROM SC_SERVICETEAM T
+                 INNER JOIN SC_SERVICECENTER C ON C.ID = T.SERVICECENTERID
+                 WHERE T.SERVICECENTERID = :Sc AND (C.CENTERADMIN = :S1 OR T.SUPERVISOR = :S2)
+                 ORDER BY T.TEAMNAME";
+            return conn.Query<ServiceOption>(sql, new { Sc = serviceCenterId, S1 = staffId, S2 = staffId }).ToList();
         }
 
-        public List<ServiceStaffOption> GetMembersForAssign(int serviceCenterId, int teamId, int roleId)
+        // the active members of the team + its supervisor (only for a team the user may assign to)
+        public List<ServiceStaffOption> GetMembersForAssign(int serviceCenterId, int teamId, string staffId)
         {
+            if (!GetTeamsForAssign(serviceCenterId, staffId).Any(t => t.ID == teamId)) return new List<ServiceStaffOption>();
             using var conn = _databaseService.GetConnection();
-            if (SupervisorRoles.Contains(roleId))
-                return conn.Query<ServiceStaffOption>(@"
-                    SELECT TM.STAFFID, E.EMPLOYEENAME
+            const string sql = @"
+                SELECT STAFFID, EMPLOYEENAME FROM (
+                    SELECT TM.STAFFID, E.EMPLOYEENAME, 1 ORD
                       FROM SC_TEAMMEMBER TM
                      INNER JOIN EM_EMPLOYEE E ON E.STAFFID = TM.STAFFID
-                     WHERE TM.SERVICECENTERID = :Sc AND TM.TEAMID = :Team
-                     ORDER BY E.EMPLOYEENAME", new { Sc = serviceCenterId, Team = teamId }).ToList();
-
-            // center admin: the request goes to the team supervisor (old code)
-            return conn.Query<ServiceStaffOption>(@"
-                SELECT ST.SUPERVISOR STAFFID, E.EMPLOYEENAME
-                  FROM SC_SERVICETEAM ST
-                 INNER JOIN EM_EMPLOYEE E ON E.STAFFID = ST.SUPERVISOR
-                 WHERE ST.SERVICECENTERID = :Sc AND ST.ID = :Team", new { Sc = serviceCenterId, Team = teamId }).ToList();
+                     WHERE TM.SERVICECENTERID = :Sc1 AND TM.TEAMID = :Team1 AND NVL(TM.ISACTIVE, 1) = 1
+                    UNION
+                    SELECT ST.SUPERVISOR, E.EMPLOYEENAME || ' (Supervisor)', 0
+                      FROM SC_SERVICETEAM ST
+                     INNER JOIN EM_EMPLOYEE E ON E.STAFFID = ST.SUPERVISOR
+                     WHERE ST.SERVICECENTERID = :Sc2 AND ST.ID = :Team2)
+                 ORDER BY ORD, EMPLOYEENAME";
+            var rows = conn.Query<ServiceStaffOption>(sql, new { Sc1 = serviceCenterId, Team1 = teamId, Sc2 = serviceCenterId, Team2 = teamId }).ToList();
+            // a supervisor who is also a team member is listed once
+            return rows.GroupBy(r => r.STAFFID).Select(g => g.First()).ToList();
         }
 
         public ServiceCenterAdminModel? GetServiceCenterAdmin(int serviceCenterId)
@@ -193,8 +197,8 @@ namespace Admin360.Repositories
              INNER JOIN EM_EMPLOYEE E ON E.STAFFID = S.FROMSTAFFID
              INNER JOIN BS_DESIGNATION DE ON DE.ID = E.DESIGNATIONID";
 
-        // old code: INNER JOIN SC_MACHINE (a request without machine, MACHINEID = 0, does not appear in these lists)
-        private const string MachineJoin = " INNER JOIN SC_MACHINE MCH ON MCH.ID = S.MACHINEID ";
+        // LEFT JOIN: a request saved without machine (MACHINEID = 0) is listed too (YA's INNER JOIN hid it from every list)
+        private const string MachineJoin = " LEFT JOIN SC_MACHINE MCH ON MCH.ID = S.MACHINEID ";
         // lists that had no machine join in YA (same rows; the column is only shown)
         private const string MachineLeft = " LEFT JOIN SC_MACHINE MCH ON MCH.ID = S.MACHINEID ";
         private const string MachineCol = ", MCH.MACHINECODE || ' - ' || MCH.MACHINENAME MACHINE_OUTLET";
@@ -208,91 +212,62 @@ namespace Admin360.Repositories
              INNER JOIN SC_SERVICETEAM ST ON ST.ID = SA.TEAMID
              INNER JOIN BS_BUSINESSCENTER BSC ON BSC.ID = ST.BUSINESSCENTERID ";
 
+        // the center that handles the request now: the forwarded-to center, else the chosen one
+        private const string CurCenter = "CASE WHEN NVL(S.FRDSERVICECENTERID, 0) > 0 THEN S.FRDSERVICECENTERID ELSE S.SERVICECENTERID END";
+        // the user is the admin of that center or supervises one of its teams
+        private const string IsManager = @"(SC.CENTERADMIN = :S1
+                 OR EXISTS (SELECT 1 FROM SC_SERVICETEAM MT WHERE MT.SERVICECENTERID = SC.ID AND MT.SUPERVISOR = :S2))";
+
         /// <summary>The SQL of one list (without ORDER BY) + its parameters.</summary>
         private static (string Sql, DynamicParameters Args) ListQuery(ServiceList list, string staffId, int roleId)
         {
             var p = new DynamicParameters();
             p.Add("S1", staffId);
-            bool sup = SupervisorRoles.Contains(roleId);
             string sql;
 
             switch (list)
             {
-                // ---------- old GetApprovalList(0 / 2): approvers of the requester's location + company + department (DP_APPROVER)
+                // ---------- approval by the SERVICE CENTER ADMIN (0 = waiting, 2 = rejected: may be approved again)
                 case ServiceList.ApprovalPending:
                 case ServiceList.ApprovalRejected:
                     p.Add("Appr", list == ServiceList.ApprovalPending ? 0 : 2);
                     sql = $@"
-                        SELECT DISTINCT {ReqCols}, BSC.CENTERCODE SERVICECENTERLOCATION {MachineCol}
+                        SELECT {ReqCols}, BSC.CENTERCODE SERVICECENTERLOCATION, C.CATEGORYNAME {MachineCol}
                         {FromReq}
-                         INNER JOIN SC_SERVICECENTER SC ON SC.ID = S.SERVICECENTERID
-                        {MachineJoin}
+                         INNER JOIN SC_SERVICECENTER SC ON SC.ID = {CurCenter}
                          INNER JOIN BS_BUSINESSCENTER BSC ON BSC.ID = SC.BUSINESSCENTERID
-                         INNER JOIN DP_APPROVER A ON A.BUSINESSCENTERID = E.BUSINESSCENTERID AND A.COMPANYID = E.COMPANYID
-                         WHERE A.DEPARTMENTID = E.DEPARTMENTID AND S.STATUS = 0 AND S.ISOPEN = 0 AND S.ISAPPROVED = :Appr
-                           AND A.APPROVERID = :S1";
+                          LEFT JOIN SC_CATEGORY C ON C.ID = S.CATEGORYID
+                        {MachineJoin}
+                         WHERE S.STATUS = 0 AND S.ISOPEN = 0 AND S.ISAPPROVED = :Appr AND SC.CENTERADMIN = :S1";
                     break;
 
-                // ---------- old GetByAdminRequest(0, role)
+                // ---------- approved, not assigned yet: center admin + team supervisors of the current center
                 case ServiceList.AdminUnassigned:
                     p.Add("S2", staffId);
-                    sql = sup
-                        ? $@"
+                    sql = $@"
                         SELECT {ReqCols}, BSC.CENTERNAME SERVICECENTERLOCATION, C.CATEGORYNAME {MachineCol}
                         {FromReq}
-                         INNER JOIN SC_SERVICECENTER SC ON SC.ID = S.SERVICECENTERID
+                         INNER JOIN SC_SERVICECENTER SC ON SC.ID = {CurCenter}
                          INNER JOIN BS_BUSINESSCENTER BSC ON BSC.ID = SC.BUSINESSCENTERID
-                         INNER JOIN SC_CATEGORY C ON C.ID = S.CATEGORYID
-                         INNER JOIN SC_SERVICETEAM ST ON ST.SERVICECENTERID = S.SERVICECENTERID
-                         INNER JOIN SC_SERVICEASSIGN SA ON SA.TEAMMEMBERID = ST.SUPERVISOR AND SA.REQUESTID = S.ID
+                          LEFT JOIN SC_CATEGORY C ON C.ID = S.CATEGORYID
                         {MachineJoin}
-                         WHERE S.STATUS = 1 AND S.ISOPEN = 0 AND S.ISAPPROVED = 1 AND S.FRDSERVICECENTERID = 0 AND SA.ISACTIVE = 1
-                           AND ST.SUPERVISOR = :S1
-                        UNION
-                        SELECT {ReqCols}, BSC.CENTERNAME SERVICECENTERLOCATION, C.CATEGORYNAME {MachineCol}
-                        {FromReq}
-                         INNER JOIN SC_SERVICECENTER SC ON SC.ID = S.FRDSERVICECENTERID
-                         INNER JOIN BS_BUSINESSCENTER BSC ON BSC.ID = SC.BUSINESSCENTERID
-                         INNER JOIN SC_CATEGORY C ON C.ID = S.CATEGORYID
-                         INNER JOIN SC_SERVICETEAM ST ON ST.SERVICECENTERID = S.SERVICECENTERID
-                        {MachineJoin}
-                         WHERE S.STATUS = 0 AND S.ISOPEN = 0 AND S.ISAPPROVED = 1 AND S.FRDSERVICECENTERID > 0
-                           AND SC.CENTERADMIN = :S2"
-                        : $@"
-                        SELECT {ReqCols}, BSC.CENTERNAME SERVICECENTERLOCATION, C.CATEGORYNAME {MachineCol}
-                        {FromReq}
-                         INNER JOIN SC_SERVICECENTER SC ON SC.ID = S.SERVICECENTERID
-                         INNER JOIN BS_BUSINESSCENTER BSC ON BSC.ID = SC.BUSINESSCENTERID
-                         INNER JOIN SC_CATEGORY C ON C.ID = S.CATEGORYID
-                        {MachineJoin}
-                         WHERE S.STATUS = 0 AND S.ISOPEN = 0 AND S.ISAPPROVED = 1 AND S.FRDSERVICECENTERID = 0 AND SC.CENTERADMIN = :S1
-                        UNION
-                        SELECT {ReqCols}, BSC.CENTERNAME SERVICECENTERLOCATION, C.CATEGORYNAME {MachineCol}
-                        {FromReq}
-                         INNER JOIN SC_SERVICECENTER SC ON SC.ID = S.FRDSERVICECENTERID
-                         INNER JOIN BS_BUSINESSCENTER BSC ON BSC.ID = SC.BUSINESSCENTERID
-                         INNER JOIN SC_CATEGORY C ON C.ID = S.CATEGORYID
-                        {MachineJoin}
-                         WHERE S.STATUS = 0 AND S.ISOPEN = 0 AND S.ISAPPROVED = 1 AND S.FRDSERVICECENTERID > 0 AND SC.CENTERADMIN = :S2";
+                         WHERE S.STATUS = 0 AND S.ISOPEN = 0 AND S.ISAPPROVED = 1 AND {IsManager}";
                     break;
 
-                // ---------- old GetByAdminAssignedRequest(1, role)
-                // (supervisor branch: SA.ISACTIVE = 0 exactly as in YA; admin branch had no machine join -> LEFT JOIN = same rows)
+                // ---------- assigned (on process .. revise): center admin of the current center or supervisor of the assigned team
                 case ServiceList.AdminAssigned:
                     p.Add("S2", staffId);
-                    string active = sup ? "0" : "1";
-                    string who = sup ? "ST.SUPERVISOR" : "SC.CENTERADMIN";
-                    string mach = sup ? MachineJoin : MachineLeft;
                     sql = $@"
                         SELECT {ReqCols}, BSC.CENTERCODE SERVICECENTERLOCATION {ServicemanCols} {MachineCol}
-                        {FromReq} {AssignJoin("SERVICECENTERID")} {mach}
-                         WHERE S.STATUS IN (1, 2, 3, 4) AND SA.ISACTIVE = {active} AND S.FRDSERVICECENTERID = 0
-                           AND S.ISAPPROVED = 1 AND S.ISOPEN = 0 AND {who} = :S1
-                        UNION
-                        SELECT {ReqCols}, BSC.CENTERCODE SERVICECENTERLOCATION {ServicemanCols} {MachineCol}
-                        {FromReq} {AssignJoin("FRDSERVICECENTERID")} {mach}
-                         WHERE S.STATUS IN (1, 2, 3, 4) AND SA.ISACTIVE = {active} AND S.FRDSERVICECENTERID > 0
-                           AND S.ISAPPROVED = 1 AND S.ISOPEN = 0 AND {who} = :S2";
+                        {FromReq}
+                         INNER JOIN SC_SERVICECENTER SC ON SC.ID = {CurCenter}
+                         INNER JOIN SC_SERVICEASSIGN SA ON SA.REQUESTID = S.ID AND SA.ISACTIVE = 1
+                         INNER JOIN EM_EMPLOYEE SAE ON SAE.STAFFID = SA.TEAMMEMBERID
+                         INNER JOIN SC_SERVICETEAM ST ON ST.ID = SA.TEAMID
+                         INNER JOIN BS_BUSINESSCENTER BSC ON BSC.ID = ST.BUSINESSCENTERID
+                        {MachineJoin}
+                         WHERE S.STATUS IN (1, 2, 3, 4) AND S.ISAPPROVED = 1 AND S.ISOPEN = 0
+                           AND (SC.CENTERADMIN = :S1 OR ST.SUPERVISOR = :S2)";
                     break;
 
                 // ---------- old GetInstantServicestoApprove
@@ -653,7 +628,7 @@ namespace Admin360.Repositories
             return conn.Query<ServiceRemarkModel>(sql, new { Rid = requestId }).ToList();
         }
 
-        // the old detail pages only needed a login + the request id in the session; here the user must be part of the request
+        // the user must be part of the request: requester / creator / approver / center admin / team supervisor / service person
         public bool CanView(long requestId, string staffId)
         {
             if (requestId <= 0 || string.IsNullOrWhiteSpace(staffId)) return false;
@@ -666,12 +641,8 @@ namespace Admin360.Repositories
                                     WHERE C.ID IN (S.SERVICECENTERID, S.FRDSERVICECENTERID) AND C.CENTERADMIN = :S4)
                         OR EXISTS (SELECT 1 FROM SC_SERVICETEAM T
                                     WHERE T.SERVICECENTERID IN (S.SERVICECENTERID, S.FRDSERVICECENTERID) AND T.SUPERVISOR = :S5)
-                        OR EXISTS (SELECT 1 FROM SC_SERVICEASSIGN A WHERE A.REQUESTID = S.ID AND A.TEAMMEMBERID = :S6)
-                        OR EXISTS (SELECT 1 FROM EM_EMPLOYEE E
-                                    INNER JOIN DP_APPROVER P ON P.BUSINESSCENTERID = E.BUSINESSCENTERID AND P.COMPANYID = E.COMPANYID
-                                                            AND P.DEPARTMENTID = E.DEPARTMENTID
-                                    WHERE E.STAFFID = S.FROMSTAFFID AND P.APPROVERID = :S7))";
-            return conn.ExecuteScalar<int>(sql, new { Id = requestId, S1 = staffId, S2 = staffId, S3 = staffId, S4 = staffId, S5 = staffId, S6 = staffId, S7 = staffId }) > 0;
+                        OR EXISTS (SELECT 1 FROM SC_SERVICEASSIGN A WHERE A.REQUESTID = S.ID AND A.TEAMMEMBERID = :S6))";
+            return conn.ExecuteScalar<int>(sql, new { Id = requestId, S1 = staffId, S2 = staffId, S3 = staffId, S4 = staffId, S5 = staffId, S6 = staffId }) > 0;
         }
 
         // ================================================================ ACTIONS

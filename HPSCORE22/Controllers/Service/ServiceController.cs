@@ -1,8 +1,9 @@
 // Controllers/Service/ServiceController.cs
 // Service module (port of YA Pages/Service). Request workflow:
 //   /Service/NewService          <- NewService.aspx            (draft items + attachment, service center, category, machine, save)
-//   /Service/Approver            <- Approver.aspx              (waiting for approval: approve / reject, rejected: approve again)
-//   /Service/AssignService       <- AssignService.aspx         (un-assigned / assigned: assign + forward, instant service approval)
+//   /Service/Approver            <- Approver.aspx              (service center admin: waiting for approval / rejected)
+//   /Service/AssignService       <- AssignService.aspx         (approval + un-assigned / assigned: assign + forward, instant approval)
+// Workflow: request -> SERVICE CENTER ADMIN approves -> center admin or team supervisor assigns a team member -> ...
 //   /Service/MyServiceList       <- MyServiceList.aspx         (service person: my services, revise, feedback)
 //   /Service/MyServiceRequest    <- MyServiceRequest.aspx      (requester: my requests, waiting for feedback, rejected)
 //   /Service/AddAccessories      <- AddAccessories.aspx        (team supervisor: requests that may need accessories)
@@ -73,6 +74,7 @@ namespace QCMS.Controllers
                 BusinessCenters = _repo.GetAllBusinessCenters(),
                 Machines = _repo.GetMachinesFor(UserCenterId, UserCompanyId),
                 Items = _repo.GetItems(draftId),
+                Images = _repo.GetImages(draftId),
                 AttachmentsEnabled = _files.Enabled
             };
             ViewData["Title"] = "New Service";
@@ -242,7 +244,8 @@ namespace QCMS.Controllers
                 {
                     Section("pending", "Waiting for Approval", "fa-hourglass-half", "#f59e0b", ServiceList.ApprovalPending, "approve", "reject"),
                     Section("rejected", "Rejected Request", "fa-circle-xmark", "#dc2626", ServiceList.ApprovalRejected, "approve")
-                }
+                },
+                Note = "New service requests are approved by the admin of the service center they are sent to."
             };
             ViewData["Title"] = $"({vm.Sections[0].Rows.Count}) Service Approval";
             return View("ServiceList", vm);
@@ -282,27 +285,31 @@ namespace QCMS.Controllers
                 Icon = "fa-people-arrows",
                 Sections =
                 {
-                    Section("unassigned", "Un-Assigned Service Request", "fa-inbox", "#f59e0b", ServiceList.AdminUnassigned, "assign", "forward"),
+                    // 1. the center admin approves the new request, 2. admin / team supervisor assigns a team member
+                    Section("approval", "Waiting for Approval", "fa-hourglass-half", "#f59e0b", ServiceList.ApprovalPending, "approve", "reject"),
+                    Section("unassigned", "Un-Assigned Service Request", "fa-inbox", "#0ea5e9", ServiceList.AdminUnassigned, "assign", "forward"),
                     Section("instant", "Instant Service Approval", "fa-bolt", "#7c3aed", ServiceList.InstantToApprove, "instant"),
-                    Section("assigned", "Assigned Service Request", "fa-user-gear", "#16a34a", ServiceList.AdminAssigned, "change", "forward")
+                    Section("assigned", "Assigned Service Request", "fa-user-gear", "#16a34a", ServiceList.AdminAssigned, "change", "forward"),
+                    Section("rejected", "Rejected Request", "fa-circle-xmark", "#dc2626", ServiceList.ApprovalRejected, "approve")
                 },
-                AssignServiceCenters = _repo.GetServiceCentersForAssign(StaffId, RoleId),
+                AssignServiceCenters = _repo.GetServiceCentersForAssign(StaffId),
                 BusinessCenters = _repo.GetAllBusinessCenters(),
-                IssueTypes = _dispatch.GetIssueTypes()
+                IssueTypes = _dispatch.GetIssueTypes(),
+                Note = "Approval is done by the service center admin. After approval the center admin or a team supervisor assigns the request to a team member."
             };
-            vm.Sections[1].ShowServiceman = vm.Sections[2].ShowServiceman = true;
-            ViewData["Title"] = $"({vm.Sections[0].Rows.Count}) Assign Service";
+            vm.Sections[2].ShowServiceman = vm.Sections[3].ShowServiceman = true;
+            ViewData["Title"] = $"({vm.Sections[0].Rows.Count + vm.Sections[1].Rows.Count}) Assign Service";
             return View("ServiceList", vm);
         }
 
         [HttpGet]
         public IActionResult AssignTeams(int serviceCenterId) =>
-            Json(serviceCenterId > 0 ? _repo.GetTeamsForAssign(serviceCenterId, RoleId, UserId).Select(o => new { id = o.ID, name = o.NAME }) : Enumerable.Empty<object>());
+            Json(serviceCenterId > 0 ? _repo.GetTeamsForAssign(serviceCenterId, StaffId).Select(o => new { id = o.ID, name = o.NAME }) : Enumerable.Empty<object>());
 
         [HttpGet]
         public IActionResult AssignMembers(int serviceCenterId, int teamId) =>
             Json(serviceCenterId > 0 && teamId > 0
-                ? _repo.GetMembersForAssign(serviceCenterId, teamId, RoleId).Select(o => new { id = o.STAFFID, name = o.EMPLOYEENAME + " (" + o.STAFFID + ")" })
+                ? _repo.GetMembersForAssign(serviceCenterId, teamId, StaffId).Select(o => new { id = o.STAFFID, name = o.EMPLOYEENAME + " (" + o.STAFFID + ")" })
                 : Enumerable.Empty<object>());
 
         private bool CanManage(long id) => In(ServiceList.AdminUnassigned, id) || In(ServiceList.AdminAssigned, id);
@@ -322,11 +329,16 @@ namespace QCMS.Controllers
             if (!(TryHour(startHour, out string sh) & TryHour(endHour, out string eh))) errors.Add("Select the Time.");   // & = both always parsed
             if (errors.Count > 0) return Fail(string.Join(" ", errors));
 
-            if (!CanManage(id)) return Fail("This request is not in your assign list any more.");
-            if (!_repo.GetServiceCentersForAssign(StaffId, RoleId).Any(s => s.ID == serviceCenterId)) return Fail("Select Service Center");
-            if (!_repo.GetTeamsForAssign(serviceCenterId, RoleId, UserId).Any(t => t.ID == teamId)) return Fail("Select Team");
+            if (!CanManage(id)) return Fail("This request is not approved or not in your assign list any more.");
+            if (!_repo.GetServiceCentersForAssign(StaffId).Any(s => s.ID == serviceCenterId)) return Fail("Select Service Center");
+            // a request is assigned within the center that handles it (another center = Forward)
+            var req = _repo.GetRequestDetails(id);
+            int current = (req?.FRDSERVICECENTERID ?? 0) > 0 ? req!.FRDSERVICECENTERID!.Value : req?.SERVICECENTERID ?? 0;
+            if (req == null || req.ISAPPROVED != 1) return Fail("The service center admin has not approved this request yet.");
+            if (serviceCenterId != current) return Fail("Choose the service center of this request (use Forward for another center).");
+            if (!_repo.GetTeamsForAssign(serviceCenterId, StaffId).Any(t => t.ID == teamId)) return Fail("Select Team");
             string member = memberStaffId!.Trim();
-            if (!_repo.GetMembersForAssign(serviceCenterId, teamId, RoleId).Any(m => m.STAFFID == member)) return Fail("Select Team Member");
+            if (!_repo.GetMembersForAssign(serviceCenterId, teamId, StaffId).Any(m => m.STAFFID == member)) return Fail("Select Team Member");
 
             return Run(id, "Service assigned.", () => _repo.AssignService(id, teamId, member, sd, sh, ed, eh));
         }
@@ -516,8 +528,10 @@ namespace QCMS.Controllers
                 Items = _repo.GetItems(id),
                 Accessories = _repo.GetRequiredAccessories(id),
                 Remarks = _repo.GetRemarks(id),
+                Images = _repo.GetImages(id),
                 AttachmentsEnabled = _files.Enabled,
-                CanRemark = participant
+                CanRemark = participant,
+                CanAddImages = participant && d.STATUS != ServiceStatus.Completed && _files.Enabled
             };
             vm.CanApprove = In(ServiceList.ApprovalPending, id) || In(ServiceList.ApprovalRejected, id);
             vm.CanRejectApproval = In(ServiceList.ApprovalPending, id);

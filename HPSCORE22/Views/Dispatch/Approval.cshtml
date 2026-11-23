@@ -15,6 +15,58 @@
     };
 }
 
+<style>
+    /* ===== Select All (tick all) - highlighted pill in the primary colour ===== */
+    .tick-all {
+        display: inline-flex; align-items: center; gap: 6px; margin: 0; padding: 4px 10px 4px 8px; border-radius: 999px;
+        border: 2px solid var(--bs-primary, #4f46e5); background: rgba(79, 70, 229, .08); color: var(--bs-primary, #4f46e5);
+        font-weight: 700; font-size: .78rem; line-height: 1; cursor: pointer; user-select: none; white-space: nowrap;
+        transition: background .15s ease, box-shadow .15s ease, color .15s ease;
+    }
+        .tick-all:hover { background: rgba(79, 70, 229, .16); box-shadow: 0 0 0 3px rgba(79, 70, 229, .12); }
+        .tick-all:focus-within { box-shadow: 0 0 0 3px rgba(79, 70, 229, .30); }
+        .tick-all .form-check-input {
+            margin: 0; width: 1.05rem; height: 1.05rem; cursor: pointer; border: 2px solid var(--bs-primary, #4f46e5); float: none;
+        }
+            .tick-all .form-check-input:focus { box-shadow: none; }
+            .tick-all .form-check-input:checked,
+            .tick-all .form-check-input:indeterminate { background-color: #fff; border-color: #fff; }
+            .tick-all .form-check-input:checked { background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%234f46e5' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='m6 10 3 3 6-6'/%3e%3c/svg%3e"); }
+            .tick-all .form-check-input:indeterminate { background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%234f46e5' stroke-linecap='round' stroke-width='3' d='M6 10h8'/%3e%3c/svg%3e"); }
+        /* checked / partly checked: filled primary */
+        .tick-all.on { background: var(--bs-primary, #4f46e5); color: #fff; box-shadow: 0 4px 12px rgba(79, 70, 229, .35); }
+            .tick-all.on:hover { filter: brightness(1.06); }
+    .tick-all-th { min-width: 78px; }
+
+    /* ticked rows: light primary background + left marker */
+    .sd-table tr.is-ticked > td { background: rgba(79, 70, 229, .07) !important; }
+    .sd-table tr.is-ticked > td:first-child { box-shadow: inset 3px 0 0 var(--bs-primary, #4f46e5); }
+    /* row tick boxes: same highlight as Select All - primary border, light primary fill, filled primary when ticked */
+    .sd-table .form-check-input.tick {
+        width: 1.2rem; height: 1.2rem; margin: 0; float: none; cursor: pointer; border-radius: 5px;
+        border: 2px solid var(--bs-primary, #4f46e5); background-color: rgba(79, 70, 229, .10);
+        transition: background-color .15s ease, box-shadow .15s ease, transform .1s ease;
+    }
+        .sd-table .form-check-input.tick:hover { background-color: rgba(79, 70, 229, .20); box-shadow: 0 0 0 3px rgba(79, 70, 229, .15); }
+        .sd-table .form-check-input.tick:focus { box-shadow: 0 0 0 3px rgba(79, 70, 229, .30); border-color: var(--bs-primary, #4f46e5); }
+        .sd-table .form-check-input.tick:active { transform: scale(.92); }
+        .sd-table .form-check-input.tick:checked {
+            background-color: var(--bs-primary, #4f46e5); border-color: var(--bs-primary, #4f46e5); box-shadow: 0 2px 8px rgba(79, 70, 229, .35);
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3e%3cpath fill='none' stroke='%23fff' stroke-linecap='round' stroke-linejoin='round' stroke-width='3' d='m6 10 3 3 6-6'/%3e%3c/svg%3e");
+        }
+    @@media (max-width: 767.98px) { .sd-table .form-check-input.tick { width: 1.35rem; height: 1.35rem; } }   /* bigger touch target */
+
+    /* bulk bar: count stands out when something is ticked */
+    #bulkBar .tick-count.on { color: var(--bs-primary, #4f46e5) !important; font-weight: 700; }
+    /* phones: the header (with Select All) is hidden in card view - the bulk bar shows its own Select All */
+    .tick-all-m { display: none; }
+    @@media (max-width: 767.98px) {
+        .tick-all-m { display: inline-flex; }
+        #bulkBar { position: sticky; top: 0; z-index: 5; background: #fff; padding: 6px 0; }
+        .tick-all { padding: 6px 12px 6px 10px; font-size: .82rem; }       /* bigger touch target */
+    }
+</style>
+
 <div class="sd-page" data-smart-page>
     <div class="card shadow-sm border-0">
 
@@ -53,7 +105,8 @@
             @if (Model.Pending.Count > 0)
             {
                 <div class="d-flex flex-wrap gap-2 align-items-center mb-2" id="bulkBar">
-                    <span class="small text-muted"><span id="tickCount">0</span> ticked</span>
+                    <label class="tick-all tick-all-m" for="tickAllM" title="Tick all"><input type="checkbox" class="form-check-input" id="tickAllM" /><span>Select All</span></label>
+                    <span class="small text-muted tick-count" id="tickCountWrap"><span id="tickCount">0</span> ticked</span>
                     <button type="button" class="btn btn-sm btn-success" id="bulkApprove" disabled><i class="fas fa-check-double me-1"></i>Approve ticked</button>
                     <button type="button" class="btn btn-sm btn-danger" id="bulkReject" disabled><i class="fas fa-xmark me-1"></i>Reject ticked</button>
                 </div>
@@ -69,7 +122,7 @@
                                 <tr>
                                     @if (sec.Id == "pending")
                                     {
-                                        <th class="text-center sd-noexport"><input type="checkbox" class="form-check-input" id="tickAll" title="Tick all" /></th>
+                                        <th class="text-center sd-noexport tick-all-th"><label class="tick-all" for="tickAll" title="Tick all"><input type="checkbox" class="form-check-input" id="tickAll" /><span>All</span></label></th>
                                     }
                                     <th class="text-center">Action</th>
                                     <th class="sortable" data-sort="tx">Dispatch ID<i class="fas fa-sort arr"></i></th>
@@ -201,16 +254,31 @@
             /* ----- tick boxes + bulk (old ApprovalUpdate.aspx) ----- */
             var ticks = Array.prototype.slice.call(document.querySelectorAll('.tick'));
             function ticked() { return ticks.filter(function (t) { return t.checked && t.closest('tr').style.display !== 'none'; }); }
+            var allBoxes = ['tickAll', 'tickAllM'].map(function (id) { return document.getElementById(id); }).filter(Boolean);
             function refreshBulk() {
                 var n = ticked().length, c = document.getElementById('tickCount');
                 if (c) c.textContent = n;
                 ['bulkApprove', 'bulkReject'].forEach(function (id) { var b = document.getElementById(id); if (b) b.disabled = n === 0; });
+                refreshTickLook(n);
+            }
+            // look only: ticked rows, Select All checked / partly checked (indeterminate), count highlighted
+            function refreshTickLook(n) {
+                var visible = ticks.filter(function (t) { return t.closest('tr').style.display !== 'none'; }).length;
+                ticks.forEach(function (t) { t.closest('tr').classList.toggle('is-ticked', t.checked); });
+                allBoxes.forEach(function (a) {
+                    a.checked = visible > 0 && n === visible;
+                    a.indeterminate = n > 0 && n < visible;
+                    a.closest('.tick-all').classList.toggle('on', n > 0);
+                });
+                var w = document.getElementById('tickCountWrap');
+                if (w) w.classList.toggle('on', n > 0);
             }
             ticks.forEach(function (t) { t.addEventListener('change', refreshBulk); });
-            var all = document.getElementById('tickAll');
-            if (all) all.addEventListener('change', function () {
-                ticks.forEach(function (t) { if (t.closest('tr').style.display !== 'none') t.checked = all.checked; });
-                refreshBulk();
+            allBoxes.forEach(function (all) {
+                all.addEventListener('change', function () {
+                    ticks.forEach(function (t) { if (t.closest('tr').style.display !== 'none') t.checked = all.checked; });
+                    refreshBulk();
+                });
             });
             function bulk(approve) {
                 var ids = ticked().map(function (t) { return t.value; });
